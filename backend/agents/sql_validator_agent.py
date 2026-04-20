@@ -1,40 +1,35 @@
 import requests
 import re
+import os
 
-TOGETHER_API_KEY = "a60fb67ec58586166da63dfbbc672210cd4d9815a873a1684f60ca22c90e5a62"
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
-# Hard-coded guardrails - these ALWAYS run regardless of AI
 FORBIDDEN_KEYWORDS = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE", "GRANT", "REVOKE", "EXEC", "EXECUTE", "XP_", "--", ";--"]
 VALID_TABLES = ["student_results", "semester_results", "subject_grades"]
 
 def guardrail_check(sql: str):
     sql_upper = sql.upper()
-    
-    # Check forbidden keywords
+
     for keyword in FORBIDDEN_KEYWORDS:
         if keyword in sql_upper:
             raise ValueError(f"Unsafe SQL detected: contains '{keyword}'")
-    
-    # Must start with SELECT
+
     if not sql_upper.strip().startswith("SELECT"):
         raise ValueError("Only SELECT queries are allowed!")
-    
-    # Check for valid tables only
+
     tables_in_sql = re.findall(r'FROM\s+(\w+)|JOIN\s+(\w+)', sql_upper)
     for match in tables_in_sql:
         for table in match:
             if table and table.lower() not in VALID_TABLES:
                 raise ValueError(f"Invalid table: '{table}'")
-    
+
     return True
 
 
 def validate_sql(sql):
-    
-    # Step 1 - Hard guardrails first (always runs)
+
     guardrail_check(sql)
-    
-    # Step 2 - AI validation
+
     prompt = f"""You are a SQL security expert for a college department chatbot.
 
 The database has these read-only tables:
@@ -82,7 +77,6 @@ Nothing else."""
     except ValueError:
         raise
     except Exception as e:
-        # If AI fails, guardrails already passed so it's safe to continue
         print(f"AI validator failed, guardrails passed: {e}")
 
     return sql

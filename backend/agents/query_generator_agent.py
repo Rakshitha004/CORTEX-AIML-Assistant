@@ -1,7 +1,8 @@
+import os
 import requests
 import re
 
-TOGETHER_API_KEY = "a60fb67ec58586166da63dfbbc672210cd4d9815a873a1684f60ca22c90e5a62"
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
 VALID_TABLES = ["student_results", "semester_results", "subject_grades"]
 

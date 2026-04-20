@@ -1,10 +1,10 @@
 import requests
+import os
 
-TOGETHER_API_KEY = "a60fb67ec58586166da63dfbbc672210cd4d9815a873a1684f60ca22c90e5a62"
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
 def prune_columns(query: str, table: str = None):
-    
-    # Define columns per table
+
     table_columns = {
         "student_results": ["usn", "name", "cgpa"],
         "semester_results": ["usn", "semester", "sgpa"],
@@ -43,11 +43,9 @@ Example: usn,name,semester,sgpa"""
     result = response.json()
     raw = result["choices"][0]["message"]["content"].strip().lower()
 
-    # Parse columns
     all_valid = ["usn", "name", "cgpa", "semester", "sgpa", "subject_code", "subject_name", "grade", "sl_no"]
     columns = [col.strip() for col in raw.split(",") if col.strip() in all_valid]
 
-    # Safety fallback
     if not columns:
         if table == "semester_results":
             columns = ["usn", "semester", "sgpa"]

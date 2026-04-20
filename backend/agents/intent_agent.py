@@ -1,6 +1,7 @@
+import os
 import requests
 
-TOGETHER_API_KEY = "a60fb67ec58586166da63dfbbc672210cd4d9815a873a1684f60ca22c90e5a62"
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
 def detect_intent(query):
     prompt = f"""You are an intent classifier for a college department chatbot.

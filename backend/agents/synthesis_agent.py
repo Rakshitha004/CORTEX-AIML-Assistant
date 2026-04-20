@@ -1,9 +1,10 @@
+import os
 import re
 import requests
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-TOGETHER_API_KEY = "a60fb67ec58586166da63dfbbc672210cd4d9815a873a1684f60ca22c90e5a62"
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
 SQL_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"
 RAG_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"
