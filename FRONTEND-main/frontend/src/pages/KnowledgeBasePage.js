@@ -5,7 +5,7 @@ import { GlassmorphicCard } from '../components/GlassmorphicCard';
 import { Upload, Database, FileText, CheckCircle, Clock, Search, Loader2, AlertTriangle, RefreshCw, Scissors, Cpu, HardDrive } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://web-production-e4321.up.railway.app';
 const getToken = () => localStorage.getItem('cortex_token');
 
 export const KnowledgeBasePage = () => {

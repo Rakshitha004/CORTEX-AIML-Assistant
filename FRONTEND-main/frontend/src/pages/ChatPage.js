@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 import gsap from 'gsap';
 import { useNotifications } from '../context/NotificationContext';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://web-production-e4321.up.railway.app';
 const getToken = () => localStorage.getItem('cortex_token');
 
 // ── Generate a unique session ID ──────────────────────────────────────────────

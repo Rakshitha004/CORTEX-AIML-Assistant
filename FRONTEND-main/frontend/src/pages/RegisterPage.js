@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { useRole } from '../context/RoleContext';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://web-production-e4321.up.railway.app';
 
 export const RegisterPage = () => {
   const navigate = useNavigate();

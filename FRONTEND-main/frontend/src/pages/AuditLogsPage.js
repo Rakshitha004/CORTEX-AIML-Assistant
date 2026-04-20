@@ -4,7 +4,7 @@ import { AnimatedPage } from '../components/AnimatedPage';
 import { GlassmorphicCard } from '../components/GlassmorphicCard';
 import { MessageSquare, Clock, CheckCircle, AlertTriangle, Info, Search, RefreshCw, Loader2, Database, Activity } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://web-production-e4321.up.railway.app';
 const getToken = () => localStorage.getItem('cortex_token');
 
 const SYSTEM_PREFIXES = [

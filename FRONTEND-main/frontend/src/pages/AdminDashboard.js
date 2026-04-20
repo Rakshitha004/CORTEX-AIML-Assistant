@@ -4,7 +4,7 @@ import { AnimatedPage } from '../components/AnimatedPage';
 import { MessageSquare, Activity, Clock, Database, CheckCircle, AlertTriangle, TrendingUp, BarChart2, Zap, Users } from 'lucide-react';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://web-production-e4321.up.railway.app';
 const getToken = () => localStorage.getItem('cortex_token');
 
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };

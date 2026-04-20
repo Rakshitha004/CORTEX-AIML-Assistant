@@ -8,7 +8,7 @@ import { useTheme, themes } from '../context/ThemeContext';
 import { useRole } from '../context/RoleContext';
 import { useOnboarding } from '../context/OnboardingContext';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://web-production-e4321.up.railway.app';
 
 const tabs = [
   { id: 'profile', label: 'Profile', icon: User },
