@@ -12,7 +12,8 @@ from pathlib import Path
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPExceptionfrom fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
