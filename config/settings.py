@@ -13,9 +13,9 @@ MODELS_DIR = BASE_DIR / "models"
 VECTOR_STORE_DIR = BASE_DIR / "rag" / "vector_store"
 
 # Ensure directories exist
-PDF_DIR.mkdir(exist_ok=True)
-DATABASE_DIR.mkdir(exist_ok=True)
-VECTOR_STORE_DIR.mkdir(exist_ok=True)
+PDF_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Database settings
 DATABASE_PATH = DATABASE_DIR / "students.db"
@@ -49,7 +49,7 @@ API_LOG_LEVEL = "info"
 # Logging settings
 LOG_LEVEL = "INFO"
 LOG_FILE = BASE_DIR / "logs" / "app.log"
-LOG_FILE.parent.mkdir(exist_ok=True)
+LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Agent settings
 INTENT_CATEGORIES = ["student_data", "knowledge", "analysis", "other"]
