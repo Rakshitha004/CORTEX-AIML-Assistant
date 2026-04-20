@@ -15,7 +15,7 @@ from .nodes import (
 
 builder = StateGraph(AgentState)
 
-builder.add_node("intent", intent_node)
+builder.add_node("intent_node", intent_node)
 builder.add_node("table", table_node)
 builder.add_node("column", column_node)
 builder.add_node("query", query_node)
@@ -25,7 +25,7 @@ builder.add_node("rag", rag_node)
 builder.add_node("synthesis", synthesis_node)
 builder.add_node("audit", audit_node)
 
-builder.set_entry_point("intent")
+builder.set_entry_point("intent_node")
 
 # ---- Conditional routing after intent ----
 def route_by_intent(state):
@@ -33,7 +33,7 @@ def route_by_intent(state):
         return "rag"
     return "table"
 
-builder.add_conditional_edges("intent", route_by_intent, {
+builder.add_conditional_edges("intent_node", route_by_intent, {
     "rag": "rag",
     "table": "table"
 })
