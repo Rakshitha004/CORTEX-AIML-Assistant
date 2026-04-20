@@ -28,6 +28,8 @@ class FAISSVectorStore:
         self._pc = None
         self._index = None
         self.index = self
+        # self._connect()      ← ADD # here
+        # self._load_metadata() ← ADD # here
         self._connect()
         self._load_metadata()
 
@@ -139,6 +141,11 @@ class FAISSVectorStore:
 
     def add_embeddings(self, embeddings: np.ndarray, metadata: List[Dict[str, Any]]) -> bool:
         try:
+            if self._index is None:
+                print("[Pinecone] Trying lazy connect...")
+                self._connect()
+                self._load_metadata()
+            
             if self._index is None:
                 print("[Pinecone] Cannot add embeddings — not connected!")
                 return False
