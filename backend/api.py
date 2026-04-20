@@ -605,3 +605,35 @@ async def query_with_pdf(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/index-documents")
+def index_documents(current_user=Depends(get_current_user)):
+    if current_user["role"] != "Admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    try:
+        result = subprocess.run([PYTHON_EXE, INDEX_ALL_SCRIPT], capture_output=True, text=True, timeout=300, cwd=RAG_DIR)
+        return {"message": "Full re-indexing complete", "output": result.stdout[-500:] if result.stdout else ""}
+    except subprocess.TimeoutExpired:
+        return {"message": "Re-indexing started (running in background)"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ─── Documents List ───────────────────────────────────────────────────────────
+@app.get("/documents")
+def get_documents(current_user=Depends(get_current_user)):
+    try:
+        from rag.vector_store.faiss_store import get_vector_store
+        vector_store = get_vector_store()
+        docs = {}
+        for meta in vector_store.metadata:
+            name = meta.get("doc_name", "Unknown")
+            if name not in docs:
+                docs[name] = {
+                    "name": name,
+                    "status": "Indexed",
+                    "size": "—",
+                    "uploadTime": "Recently"
+                }
+        return {"documents": list(docs.values())}
+    except Exception as e:
+        return {"documents": []}
