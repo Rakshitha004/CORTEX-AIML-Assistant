@@ -399,7 +399,7 @@ export const ChatLayout = () => {
     const currentSessionId = activeId;
 
     setConvos(prev => prev.map(c => {
-      if (c.id !== activeId) return c;
+      if (c.id !== currentSessionId) return c;
       const newTitle = c.title === 'New Conversation' ? text.slice(0, 40) : c.title;
       return { ...c, title: newTitle, messages: [...c.messages, userMsg] };
     }));
@@ -419,14 +419,14 @@ export const ChatLayout = () => {
       const aiMsg = { id: (Date.now() + 1).toString(), text: answer, isUser: false };
 
       setConvos(prev => prev.map(c => {
-        if (c.id !== activeId) return c;
+        if (c.id !== currentSessionId) return c;
         return { ...c, lastMessage: answer.slice(0, 50), messages: [...c.messages, aiMsg] };
       }));
 
       addNotification({ title: 'Query Complete', message: `Response ready for: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`, type: 'chat' });
     } catch (error) {
       const errMsg = { id: (Date.now() + 1).toString(), text: `⚠️ ${error.message}`, isUser: false };
-      setConvos(prev => prev.map(c => c.id !== activeId ? c : { ...c, messages: [...c.messages, errMsg] }));
+      setConvos(prev => prev.map(c.id !== currentSessionId ? c : { ...c, messages: [...c.messages, errMsg] }));
     } finally {
       setLoading(false);
     }
