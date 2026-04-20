@@ -15,41 +15,41 @@ from .nodes import (
 
 builder = StateGraph(AgentState)
 
-builder.add_node("intent_node", intent_node)
-builder.add_node("table", table_node)
-builder.add_node("column", column_node)
-builder.add_node("query", query_node)
-builder.add_node("validate", validator_node)
-builder.add_node("execute", execution_node)
-builder.add_node("rag", rag_node)
-builder.add_node("synthesis", synthesis_node)
-builder.add_node("audit", audit_node)
+builder.add_node("step_intent", intent_node)
+builder.add_node("step_table", table_node)
+builder.add_node("step_column", column_node)
+builder.add_node("step_query", query_node)
+builder.add_node("step_validate", validator_node)
+builder.add_node("step_execute", execution_node)
+builder.add_node("step_rag", rag_node)
+builder.add_node("step_synthesis", synthesis_node)
+builder.add_node("step_audit", audit_node)
 
-builder.set_entry_point("intent_node")
+builder.set_entry_point("step_intent")
 
 # ---- Conditional routing after intent ----
 def route_by_intent(state):
     if state.get("intent") == "knowledge_query":
-        return "rag"
-    return "table"
+        return "step_rag"
+    return "step_table"
 
-builder.add_conditional_edges("intent_node", route_by_intent, {
-    "rag": "rag",
-    "table": "table"
+builder.add_conditional_edges("step_intent", route_by_intent, {
+    "step_rag": "step_rag",
+    "step_table": "step_table"
 })
 
 # ---- SQL path ----
-builder.add_edge("table", "column")
-builder.add_edge("column", "query")
-builder.add_edge("query", "validate")
-builder.add_edge("validate", "execute")
-builder.add_edge("execute", "synthesis")
+builder.add_edge("step_table", "step_column")
+builder.add_edge("step_column", "step_query")
+builder.add_edge("step_query", "step_validate")
+builder.add_edge("step_validate", "step_execute")
+builder.add_edge("step_execute", "step_synthesis")
 
 # ---- RAG path ----
-builder.add_edge("rag", "synthesis")
+builder.add_edge("step_rag", "step_synthesis")
 
 # ---- Shared tail ----
-builder.add_edge("synthesis", "audit")
-builder.add_edge("audit", END)
+builder.add_edge("step_synthesis", "step_audit")
+builder.add_edge("step_audit", END)
 
 graph = builder.compile()
