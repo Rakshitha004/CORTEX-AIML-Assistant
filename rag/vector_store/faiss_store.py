@@ -7,6 +7,16 @@ import os
 import numpy as np
 from typing import List, Dict, Any, Optional
 from utils.logger import logger
+import os
+import numpy as np
+from typing import List, Dict, Any, Optional
+from utils.logger import logger
+
+# ── Load env variables ────────────────────────────────────
+from dotenv import load_dotenv
+from pathlib import Path
+# Load .env from project root
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 PINECONE_INDEX_NAME = "cortex-rag"
 
