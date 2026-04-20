@@ -12,21 +12,6 @@ const getToken = () => localStorage.getItem('cortex_token');
 // ── Generate a unique session ID ──────────────────────────────────────────────
 const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-// ── Extract text from a file (PDF or text-based) ─────────────────────────────
-const extractTextFromFile = (file) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      resolve(typeof text === 'string' && text.trim().length > 50
-        ? text
-        : `[Binary file: ${file.name} — content could not be extracted as plain text]`);
-    };
-    reader.onerror = () => resolve(`[File: ${file.name}]`);
-    reader.readAsText(file);
-  });
-};
-
 /* ── Sidebar ── */
 const ChatSidebar = ({ isOpen, conversations, activeId, onSelect, onNew, onDelete }) => {
   const ref = useRef(null);
@@ -163,7 +148,6 @@ const ChatInput = ({ onSend, disabled }) => {
     return () => clearInterval(recRef.current);
   }, [recording]);
 
-  // ── File attach — just attach, no uploading/indexing ──
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -339,8 +323,6 @@ export const ChatLayout = () => {
     try { localStorage.setItem('cortex_active_convo', activeId); } catch {}
   }, [activeId]);
 
-  // Load chat history from MongoDB on startup
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const token = getToken();
     if (!token || historyLoaded) return;
@@ -405,12 +387,16 @@ export const ChatLayout = () => {
       let answer;
 
       if (file) {
-        // ── PDF / file mode: extract text, send to /query-with-pdf ──
-        const pdfText = await extractTextFromFile(file);
+        // ── PDF mode: send file as multipart to backend for text extraction ──
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('query', text);
+        formData.append('session_id', currentSessionId);
+
         const response = await fetch(`${API_URL}/query-with-pdf`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ query: text, pdf_text: pdfText, session_id: currentSessionId }),
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData,
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Query failed');

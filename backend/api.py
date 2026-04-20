@@ -565,19 +565,43 @@ class ChatPDFRequest(BaseModel):
     session_id: str = ""
 
 @app.post("/query-with-pdf")
-async def query_with_pdf(request: ChatPDFRequest, current_user=Depends(get_current_user)):
+async def query_with_pdf(
+    file: UploadFile = File(...),
+    query: str = Form(...),
+    session_id: str = Form(""),
+    current_user=Depends(get_current_user)
+):
     try:
+        import PyPDF2
+        import io
         from together import Together
+
+        contents = await file.read()
+
+        # Extract text from PDF
+        pdf_text = ""
+        try:
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
+            for page in pdf_reader.pages:
+                pdf_text += page.extract_text() + "\n"
+        except Exception:
+            pdf_text = contents.decode('utf-8', errors='ignore')
+
+        if not pdf_text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text from file")
+
         client_ai = Together(api_key=os.getenv("TOGETHER_API_KEY"))
         response = client_ai.chat.completions.create(
-            model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            model="Qwen/Qwen3-235B-A22B-Instruct-2507-FP8",
             messages=[
-                {"role": "system", "content": f"You are a helpful assistant. Answer questions based only on this document:\n\n{request.pdf_text[:8000]}"},
-                {"role": "user", "content": request.query}
+                {"role": "system", "content": f"You are a helpful assistant. Answer questions based only on this document:\n\n{pdf_text[:8000]}"},
+                {"role": "user", "content": query}
             ],
             max_tokens=1000
         )
         answer = response.choices[0].message.content
         return {"answer": answer}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
