@@ -72,21 +72,29 @@ const Bubble = ({ text, isUser, fileName }) => {
         {isUser ? (
           <p className="text-white text-sm leading-relaxed whitespace-pre-wrap break-words">{text}</p>
         ) : (
-          <Markdown remarkPlugins={[remarkGfm]} components={{
-            table: ({ node, ...props }) => <table className="border-collapse w-full my-3 text-sm rounded-lg overflow-hidden" {...props} />,
-            thead: ({ node, ...props }) => <thead className="bg-purple-900/60" {...props} />,
-            tbody: ({ node, ...props }) => <tbody {...props} />,
-            th: ({ node, ...props }) => <th className="border border-purple-500/30 px-3 py-2 text-cyan-300 text-left font-semibold text-xs uppercase tracking-wider" {...props} />,
-            td: ({ node, ...props }) => <td className="border border-white/10 px-3 py-2 text-gray-200 text-sm" {...props} />,
-            tr: ({ node, ...props }) => <tr className="even:bg-white/5 hover:bg-white/10 transition-colors" {...props} />,
-            p: ({ node, ...props }) => <p className="text-white text-sm leading-relaxed mb-1" {...props} />,
-            strong: ({ node, ...props }) => <strong className="text-cyan-300 font-semibold" {...props} />,
-            li: ({ node, ...props }) => <li className="text-white text-sm leading-relaxed ml-4 list-disc" {...props} />,
-            ul: ({ node, ...props }) => <ul className="my-2 space-y-1" {...props} />,
-            ol: ({ node, ...props }) => <ol className="my-2 space-y-1 list-decimal ml-4" {...props} />,
-          }}>
-            {text}
-          </Markdown>
+          <div className="text-white text-sm leading-relaxed">
+            <Markdown remarkPlugins={[remarkGfm]} components={{
+              table: ({ node, ...props }) => <table className="border-collapse w-full my-3 text-sm rounded-lg overflow-hidden" {...props} />,
+              thead: ({ node, ...props }) => <thead className="bg-purple-900/60" {...props} />,
+              tbody: ({ node, ...props }) => <tbody {...props} />,
+              th: ({ node, ...props }) => <th className="border border-purple-500/30 px-3 py-2 text-cyan-300 text-left font-semibold text-xs uppercase tracking-wider" {...props} />,
+              td: ({ node, ...props }) => <td className="border border-white/10 px-3 py-2 text-white text-sm" {...props} />,
+              tr: ({ node, ...props }) => <tr className="even:bg-white/5 hover:bg-white/10 transition-colors" {...props} />,
+              p: ({ node, ...props }) => <p className="text-white text-sm leading-relaxed mb-1" {...props} />,
+              strong: ({ node, ...props }) => <strong className="text-cyan-300 font-semibold" {...props} />,
+              em: ({ node, ...props }) => <em className="text-white/80 italic" {...props} />,
+              li: ({ node, ...props }) => <li className="text-white text-sm leading-relaxed ml-4 list-disc mb-1" {...props} />,
+              ul: ({ node, ...props }) => <ul className="my-2 space-y-1 text-white" {...props} />,
+              ol: ({ node, ...props }) => <ol className="my-2 space-y-1 list-decimal ml-4 text-white" {...props} />,
+              h1: ({ node, ...props }) => <h1 className="text-white font-bold text-base mb-2 mt-3" {...props} />,
+              h2: ({ node, ...props }) => <h2 className="text-white font-bold text-sm mb-2 mt-3" {...props} />,
+              h3: ({ node, ...props }) => <h3 className="text-white font-semibold text-sm mb-1 mt-2" {...props} />,
+              code: ({ node, ...props }) => <code className="text-cyan-300 bg-white/10 px-1 rounded text-xs" {...props} />,
+              blockquote: ({ node, ...props }) => <blockquote className="border-l-2 border-cyan-400/40 pl-3 text-white/80 italic my-2" {...props} />,
+            }}>
+              {text}
+            </Markdown>
+          </div>
         )}
       </div>
     </motion.div>
@@ -186,7 +194,6 @@ const ChatInput = ({ onSend, disabled, activePdfName, onClearPdf }) => {
 
   return (
     <div className="glass border-t border-white/10 p-4" data-testid="chat-input-container">
-      {/* Show active PDF context banner */}
       {activePdfName && !attachedFile && (
         <div className="max-w-4xl mx-auto mb-3">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30">
@@ -199,7 +206,6 @@ const ChatInput = ({ onSend, disabled, activePdfName, onClearPdf }) => {
           </div>
         </div>
       )}
-      {/* Show newly attached file */}
       {attachedFile && (
         <div className="max-w-4xl mx-auto mb-3">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
@@ -278,7 +284,6 @@ export const ChatLayout = () => {
 
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  // ── PDF context stored per session: { [sessionId]: { file, name } } ──
   const pdfContextRef = useRef({});
   const containerRef = useRef(null);
   const { addNotification } = useNotifications();
@@ -327,8 +332,6 @@ export const ChatLayout = () => {
 
   const activeConvo = convos.find(c => c.id === activeId) || convos[0];
   const messages = activeConvo?.messages || INIT_MSGS;
-
-  // Active PDF for current session
   const activePdf = pdfContextRef.current[activeId] || null;
 
   useEffect(() => {
@@ -339,20 +342,14 @@ export const ChatLayout = () => {
 
   const handleClearPdf = () => {
     pdfContextRef.current = { ...pdfContextRef.current, [activeId]: null };
-    // Force re-render
     setConvos(prev => [...prev]);
   };
 
-  // ── Handle send ──
   const handleSend = async (text, file) => {
     const currentSessionId = activeId;
-
-    // If a new file is attached, store it as the session's PDF context
     if (file) {
       pdfContextRef.current = { ...pdfContextRef.current, [currentSessionId]: { file, name: file.name } };
     }
-
-    // Use newly attached file OR existing session PDF context
     const pdfToUse = file || activePdf?.file || null;
     const userMsg = { id: Date.now().toString(), text, isUser: true, fileName: file?.name || activePdf?.name || null };
 
@@ -366,16 +363,13 @@ export const ChatLayout = () => {
     try {
       const token = getToken();
       if (!token) throw new Error('Not authenticated. Please login again.');
-
       let answer;
 
       if (pdfToUse) {
-        // ── PDF mode: send file to backend for extraction + answer ──
         const formData = new FormData();
         formData.append('file', pdfToUse);
         formData.append('query', text);
         formData.append('session_id', currentSessionId);
-
         const response = await fetch(`${API_URL}/query-with-pdf`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
@@ -385,7 +379,6 @@ export const ChatLayout = () => {
         if (!response.ok) throw new Error(data.detail || 'Query failed');
         answer = data.answer || 'No response received.';
       } else {
-        // ── Normal RAG/SQL query ──
         const response = await fetch(`${API_URL}/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -401,7 +394,6 @@ export const ChatLayout = () => {
         if (c.id !== currentSessionId) return c;
         return { ...c, lastMessage: answer.slice(0, 50), messages: [...c.messages, aiMsg] };
       }));
-
       addNotification({ title: 'Query Complete', message: `Response ready for: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`, type: 'chat' });
     } catch (error) {
       const errMsg = { id: (Date.now() + 1).toString(), text: `⚠️ ${error.message}`, isUser: false };
@@ -422,7 +414,6 @@ export const ChatLayout = () => {
   const handleSelect = (id) => setActiveId(id);
 
   const handleDelete = (id) => {
-    // Clear PDF context for deleted session
     delete pdfContextRef.current[id];
     setConvos(prev => {
       const remaining = prev.filter(c => c.id !== id);
@@ -478,12 +469,7 @@ export const ChatLayout = () => {
               )}
             </div>
           </div>
-          <ChatInput
-            onSend={handleSend}
-            disabled={loading}
-            activePdfName={activePdf?.name || null}
-            onClearPdf={handleClearPdf}
-          />
+          <ChatInput onSend={handleSend} disabled={loading} activePdfName={activePdf?.name || null} onClearPdf={handleClearPdf} />
         </div>
       </div>
     </div>
