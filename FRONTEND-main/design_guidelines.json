@@ -1,0 +1,137 @@
+{
+  "project_name": "CORTEX – AIML Department Assistant",
+  "theme": "dark",
+  "archetype": "7 (Electric & Neon) blended with 5 (Jewel & Luxury)",
+  "design_philosophy": "A calm, premium, minimal AI experience (Sansara) fused with glow, motion, and futuristic elements (Voxr). Dark futuristic UI using high-end glassmorphism and neon gradient glow effects (Cyan -> Blue -> Purple) against a deep void background.",
+  "colors": {
+    "background": {
+      "base": "#05050A",
+      "surface": "#0A0A12",
+      "surface_glass": "rgba(255, 255, 255, 0.03)",
+      "surface_glass_hover": "rgba(255, 255, 255, 0.06)",
+      "border": "rgba(255, 255, 255, 0.1)"
+    },
+    "primary": {
+      "base": "#0057FF",
+      "glow": "rgba(0, 87, 255, 0.5)",
+      "text": "#FFFFFF"
+    },
+    "secondary": {
+      "base": "#00F0FF",
+      "glow": "rgba(0, 240, 255, 0.4)",
+      "text": "#05050A"
+    },
+    "accent": {
+      "purple": "#9D4CDD",
+      "pink": "#FF00E4"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A0A0B0",
+      "muted": "#606070"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "heading": "'Outfit', sans-serif",
+      "body": "'Manrope', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "scales": {
+      "h1": "text-5xl sm:text-6xl tracking-tight font-light",
+      "h2": "text-3xl sm:text-4xl tracking-tight font-medium",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm uppercase tracking-[0.2em]"
+    }
+  },
+  "spacing_and_layout": {
+    "generous_spacing": "p-8, p-12, p-16 for structural sections. Containers must have internal padding p-6 or p-8.",
+    "bento_grid": "grid-cols-1 md:grid-cols-12 gap-8. Mix spans to create asymmetry. Never fill 100% perfectly on marketing sections.",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-4 gap-6. Dense, data-heavy, full utilization.",
+    "chat_layout": "Strict h-screen with overflow-hidden on body. Collapsible sidebar with fixed width (260px). Main chat area uses overflow-y-auto. Input bar fixed at bottom of chat area."
+  },
+  "surfaces": {
+    "glassmorphism": "backdrop-blur-xl bg-white/[0.03] border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)]",
+    "tracing_beam_card": "Cards with animated neon gradient borders. Inner background #0A0A12.",
+    "headers": "Crystal glass: backdrop-blur-2xl bg-[#05050A]/60 border-b border-white/10"
+  },
+  "animations": {
+    "library": "gsap",
+    "rules": [
+      "Fade-in + slide-up staggered on load for all major sections.",
+      "Hover scale effects on cards (scale 1.02) with increased border opacity and shadow glow.",
+      "Glowing pulse effects on primary buttons and abstract background orbs.",
+      "Chat sidebar slide-in/out via GSAP animating the width and opacity.",
+      "Typing animations using GSAP text plugins or stagger.",
+      "Smooth page transitions."
+    ]
+  },
+  "pages": {
+    "landing": {
+      "description": "Marketing page. High visual impact. Hero with glowing abstract background. Feature bento grid. Demo chat preview.",
+      "components_needed": ["HeroSection", "FeaturesBento", "DemoPreview", "BenefitsSection", "CTASection"]
+    },
+    "about": {
+      "description": "Storytelling page. Mission, vision, problem/solution. Use academic imagery with dark mode styling.",
+      "components_needed": ["AboutHero", "VisionMission", "ProblemSolutionGrid", "TechStackShowcase"]
+    },
+    "chat_assistant": {
+      "description": "Core app page. Left sidebar (conversations list). Center chat area (auto-scroll). Bottom fixed input (glassmorphic, paperclip, mic icons).",
+      "components_needed": ["ChatLayout", "Sidebar", "MessageList", "MessageBubble", "ChatInput"]
+    },
+    "dashboard": {
+      "description": "Minimal clean layout. Usage stats cards, query charts, response time metrics. Suble hover animations.",
+      "components_needed": ["StatCard", "ActivityChart", "RecentQueriesTable"]
+    },
+    "settings": {
+      "description": "Fix overflow bugs. Scrollable container. Profile, Security (working toggles), Notifications, Appearance, Data/Privacy.",
+      "components_needed": ["SettingsLayout", "SettingsTabs", "ProfileForm", "SecurityToggles"]
+    }
+  },
+  "media": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/1296eb21-1271-4f60-9e68-2964495a4be3/images/443db60cc96b1559425bb2aafab5d186bbbab619a5e171dff7de741336766b90.png",
+        "description": "Abstract dark futuristic AI glowing orb background for landing page hero."
+      },
+      {
+        "category": "about_vision",
+        "url": "https://static.prod-images.emergentagent.com/jobs/1296eb21-1271-4f60-9e68-2964495a4be3/images/5f8f5e7fba21b3611fb3f683934b97a20ec3aa603fe0c1e87da16e2ee7a79caf.png",
+        "description": "Dark mode premium academic library for About page background or vision section."
+      },
+      {
+        "category": "dashboard_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/1296eb21-1271-4f60-9e68-2964495a4be3/images/9da64fa40367d8cfa313b2e996a9cc2c153e6a72673e55f18f82e71d4294ae08.png",
+        "description": "Abstract dark glassmorphism background for Dashboard/Settings."
+      },
+      {
+        "category": "testimonial_student_1",
+        "url": "https://images.unsplash.com/photo-1764016888054-d8d3b8d66945?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwzfHx1bml2ZXJzaXR5JTIwc3R1ZGVudCUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzYzNDg3MTN8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Student testimonial/persona image 1"
+      },
+      {
+        "category": "testimonial_student_2",
+        "url": "https://images.unsplash.com/photo-1612914073562-9f2e8272fea2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwxfHx1bml2ZXJzaXR5JTIwc3R1ZGVudCUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzYzNDg3MTN8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Student testimonial/persona image 2"
+      },
+      {
+        "category": "testimonial_student_3",
+        "url": "https://images.unsplash.com/photo-1485014749802-1dba3a03984c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwyfHx1bml2ZXJzaXR5JTIwc3R1ZGVudCUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzYzNDg3MTN8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Student testimonial/persona image 3"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Do NOT alter any backend logic, API routes, or database configurations.",
+    "For the Chat Assistant page, fix the scrollbar issues. Ensure the body has overflow-hidden, and ONLY the chat messages container has overflow-y-auto. The input bar must be fixed at the bottom.",
+    "Implement the animated collapsible sidebar using GSAP. It should slide in/out smoothly without breaking layout.",
+    "Use GSAP for page transitions, fade-ins, card hover effects, and glowing center animations on the landing page.",
+    "Integrate Lucide React or Phosphor Icons for UI icons (e.g., paperclip, mic, send arrow).",
+    "Use Shadcn UI components for complex interactive elements (like Select, Dialog, Tabs) but strip default styling and apply the dark glassmorphism theme defined in these guidelines.",
+    "Ensure all interactive elements have data-testid attributes for testing.",
+    "Use standard HTML/Tailwind for marketing page sections (Landing, About) to allow full creative freedom with bento grids and overlap.",
+    "Ensure toggle switches in the Settings page actually function visually and do not freeze the UI."
+  ]
+}
