@@ -11,14 +11,27 @@ from datetime import datetime
 import time
 import csv
 import os
+from pymongo import MongoClient
 
+# ── Direct MongoDB connection for metrics ──────────────────────────────────────
+try:
+    _mongo_url = os.getenv("MONGO_URL", "")
+    _client = MongoClient(_mongo_url, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
+    _db = _client["cortex"]
+    metrics_col = _db["metrics"]
+    print("[Nodes] MongoDB metrics connection established!")
+except Exception as e:
+    metrics_col = None
+    print(f"[Nodes] MongoDB metrics connection failed: {e}")
 
 METRICS_CSV = "cortex_metrics.csv"
 
 def save_metrics(db, metrics: dict):
+    # Always use the direct metrics_col connection
+    target_db = metrics_col if metrics_col is not None else db
     try:
-        if db is not None:
-            db.insert_one(metrics)
+        if target_db is not None:
+            target_db.insert_one(metrics)
             print(f"[Metrics] Saved to MongoDB!")
     except Exception as e:
         print(f"[Metrics] MongoDB failed: {e}")
@@ -240,7 +253,6 @@ def synthesis_node(state):
     if isinstance(result, list) and len(result) == 0:
         return {**state, "answer": "No records found for your query.", "sources": []}
 
-    # ── KEY FIX: unpack tuple (answer, grounding_score) ──
     answer, grounding_score = format_response(query, result)
 
     if state.get("intent") == "knowledge_query":
