@@ -483,6 +483,10 @@ def export_metrics_pdf(current_user=Depends(get_current_user)):
 # ─── Upload & Index ───────────────────────────────────────────────────────────
 @app.post("/upload-and-index")
 async def upload_and_index(file: UploadFile = File(...), current_user=Depends(get_current_user)):
+    # ── Force Pinecone reconnect with correct API key ──
+    import rag.vector_store.faiss_store as fs
+    fs._vector_store = None  # reset singleton to force reconnect
+
     allowed_types = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword"]
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Only PDF and Word files are supported.")
@@ -498,6 +502,7 @@ async def upload_and_index(file: UploadFile = File(...), current_user=Depends(ge
             return {"message": f"'{file.filename}' uploaded but indexing failed.", "filename": file.filename}
     except Exception as e:
         return {"message": f"'{file.filename}' uploaded but indexing failed: {str(e)}", "filename": file.filename}
+
 
 @app.post("/upload-document")
 async def upload_document(file: UploadFile = File(...), current_user=Depends(get_current_user)):
