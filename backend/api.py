@@ -39,6 +39,7 @@ from index_single import index_single_pdf
 # ─── MongoDB ──────────────────────────────────────────────────────────────────
 MONGO_URL = os.getenv("MONGO_URL", "")
 client = MongoClient(MONGO_URL, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
+db = client["cortex"]
 users_col = db["users"]
 chats_col = db["chats"]
 metrics_col = db["metrics"]
