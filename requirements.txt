@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.5
 aiosignal==1.4.0
@@ -80,16 +82,16 @@ mypy_extensions==1.1.0
 narwhals==2.18.1
 networkx==3.6.1
 nltk==3.9.4
-numpy==1.26.4
+numpy==2.1.0
 ollama==0.6.1
 orjson==3.11.8
 ormsgpack==1.12.2
 packaging==23.2
-pandas==2.1.0
+pandas==2.2.3
 pathspec==1.0.4
 pdfminer.six==20251230
 pdfplumber==0.11.9
-pillow==10.4.0
+pillow==11.1.0
 platformdirs==4.9.4
 pluggy==1.6.0
 propcache==0.4.1
@@ -131,7 +133,7 @@ rsa==4.9.1
 safetensors==0.7.0
 scikit-learn==1.8.0
 scipy==1.17.1
-sentence-transformers==2.7.0
+sentence-transformers==3.3.1
 sentencepiece==0.2.1
 six==1.17.0
 smmap==5.0.3
@@ -142,13 +144,13 @@ streamlit==1.29.0
 sympy==1.14.0
 tenacity==8.5.0
 threadpoolctl==3.6.0
-tokenizers==0.15.2
+tokenizers==0.21.0
 toml==0.10.2
-torch==2.1.0
-torchvision==0.16.0
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
 tornado==6.5.5
 tqdm==4.67.3
-transformers==4.36.0
+transformers==4.47.0
 typing-inspect==0.9.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
