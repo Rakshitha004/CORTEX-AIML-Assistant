@@ -9,7 +9,6 @@ import { useNotifications } from '../context/NotificationContext';
 const API_URL = 'https://web-production-e4321.up.railway.app';
 const getToken = () => localStorage.getItem('cortex_token');
 
-// ── Generate a unique session ID ──────────────────────────────────────────────
 const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 /* ── Sidebar ── */
@@ -73,44 +72,19 @@ const Bubble = ({ text, isUser, fileName }) => {
         {isUser ? (
           <p className="text-white text-sm leading-relaxed whitespace-pre-wrap break-words">{text}</p>
         ) : (
-          <Markdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              table: ({ node, ...props }) => (
-                <table className="border-collapse w-full my-3 text-sm rounded-lg overflow-hidden" {...props} />
-              ),
-              thead: ({ node, ...props }) => (
-                <thead className="bg-purple-900/60" {...props} />
-              ),
-              tbody: ({ node, ...props }) => (
-                <tbody {...props} />
-              ),
-              th: ({ node, ...props }) => (
-                <th className="border border-purple-500/30 px-3 py-2 text-cyan-300 text-left font-semibold text-xs uppercase tracking-wider" {...props} />
-              ),
-              td: ({ node, ...props }) => (
-                <td className="border border-white/10 px-3 py-2 text-gray-200 text-sm" {...props} />
-              ),
-              tr: ({ node, ...props }) => (
-                <tr className="even:bg-white/5 hover:bg-white/10 transition-colors" {...props} />
-              ),
-              p: ({ node, ...props }) => (
-                <p className="text-white text-sm leading-relaxed mb-1" {...props} />
-              ),
-              strong: ({ node, ...props }) => (
-                <strong className="text-cyan-300 font-semibold" {...props} />
-              ),
-              li: ({ node, ...props }) => (
-                <li className="text-white text-sm leading-relaxed ml-4 list-disc" {...props} />
-              ),
-              ul: ({ node, ...props }) => (
-                <ul className="my-2 space-y-1" {...props} />
-              ),
-              ol: ({ node, ...props }) => (
-                <ol className="my-2 space-y-1 list-decimal ml-4" {...props} />
-              ),
-            }}
-          >
+          <Markdown remarkPlugins={[remarkGfm]} components={{
+            table: ({ node, ...props }) => <table className="border-collapse w-full my-3 text-sm rounded-lg overflow-hidden" {...props} />,
+            thead: ({ node, ...props }) => <thead className="bg-purple-900/60" {...props} />,
+            tbody: ({ node, ...props }) => <tbody {...props} />,
+            th: ({ node, ...props }) => <th className="border border-purple-500/30 px-3 py-2 text-cyan-300 text-left font-semibold text-xs uppercase tracking-wider" {...props} />,
+            td: ({ node, ...props }) => <td className="border border-white/10 px-3 py-2 text-gray-200 text-sm" {...props} />,
+            tr: ({ node, ...props }) => <tr className="even:bg-white/5 hover:bg-white/10 transition-colors" {...props} />,
+            p: ({ node, ...props }) => <p className="text-white text-sm leading-relaxed mb-1" {...props} />,
+            strong: ({ node, ...props }) => <strong className="text-cyan-300 font-semibold" {...props} />,
+            li: ({ node, ...props }) => <li className="text-white text-sm leading-relaxed ml-4 list-disc" {...props} />,
+            ul: ({ node, ...props }) => <ul className="my-2 space-y-1" {...props} />,
+            ol: ({ node, ...props }) => <ol className="my-2 space-y-1 list-decimal ml-4" {...props} />,
+          }}>
             {text}
           </Markdown>
         )}
@@ -120,7 +94,7 @@ const Bubble = ({ text, isUser, fileName }) => {
 };
 
 /* ── Chat Input ── */
-const ChatInput = ({ onSend, disabled }) => {
+const ChatInput = ({ onSend, disabled, activePdfName, onClearPdf }) => {
   const [msg, setMsg] = useState('');
   const [recording, setRecording] = useState(false);
   const [recTime, setRecTime] = useState(0);
@@ -151,24 +125,13 @@ const ChatInput = ({ onSend, disabled }) => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const allowed = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
-      'text/plain',
-    ];
-    if (!allowed.includes(file.type)) {
-      alert('Only PDF, Word (.docx/.doc), or TXT files are supported.');
-      return;
-    }
+    const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'text/plain'];
+    if (!allowed.includes(file.type)) { alert('Only PDF, Word (.docx/.doc), or TXT files are supported.'); return; }
     setAttachedFile(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const removeFile = () => {
-    setAttachedFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+  const removeFile = () => { setAttachedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; };
 
   const send = () => {
     if (msg.trim() && !disabled) {
@@ -184,22 +147,17 @@ const ChatInput = ({ onSend, disabled }) => {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
+        recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
         recognition.onresult = (event) => { setMsg(event.results[0][0].transcript); setRecording(false); };
         recognition.onerror = () => setRecording(false);
         recognition.onend = () => setRecording(false);
-        recognition.start();
-        setRecording(true);
+        recognition.start(); setRecording(true);
       } else {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRef.current = new MediaRecorder(stream);
-        chunksRef.current = [];
+        mediaRef.current = new MediaRecorder(stream); chunksRef.current = [];
         mediaRef.current.ondataavailable = (e) => chunksRef.current.push(e.data);
         mediaRef.current.onstop = () => { onSend('[Voice message recorded]', null); stream.getTracks().forEach((t) => t.stop()); };
-        mediaRef.current.start();
-        setRecording(true);
+        mediaRef.current.start(); setRecording(true);
       }
     } catch { alert('Microphone access is required.'); }
   };
@@ -210,7 +168,7 @@ const ChatInput = ({ onSend, disabled }) => {
   if (recording) {
     return (
       <div className="glass border-t border-white/10 p-4" data-testid="chat-input-container">
-        <div className="max-w-4xl mx-auto flex items-center justify-between glass rounded-2xl border border-red-500/40 px-6 py-4" data-testid="recording-ui">
+        <div className="max-w-4xl mx-auto flex items-center justify-between glass rounded-2xl border border-red-500/40 px-6 py-4">
           <div className="flex items-center space-x-4">
             <div className="relative">
               <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
@@ -218,7 +176,7 @@ const ChatInput = ({ onSend, disabled }) => {
             </div>
             <span className="text-white text-sm">Listening... {fmt(recTime)}</span>
           </div>
-          <button onClick={stopRec} data-testid="stop-recording-button" className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center text-white hover:bg-red-600 transition-colors">
+          <button onClick={stopRec} className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center text-white hover:bg-red-600 transition-colors">
             <Square className="w-4 h-4" fill="currentColor" />
           </button>
         </div>
@@ -228,6 +186,20 @@ const ChatInput = ({ onSend, disabled }) => {
 
   return (
     <div className="glass border-t border-white/10 p-4" data-testid="chat-input-container">
+      {/* Show active PDF context banner */}
+      {activePdfName && !attachedFile && (
+        <div className="max-w-4xl mx-auto mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30">
+            <FileText className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+            <span className="text-xs text-purple-400 max-w-[200px] truncate">{activePdfName}</span>
+            <span className="text-[10px] text-purple-400">● Active in chat</span>
+            <button onClick={onClearPdf} className="text-white/30 hover:text-red-400 transition-colors ml-1" title="Remove PDF context">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Show newly attached file */}
       {attachedFile && (
         <div className="max-w-4xl mx-auto mb-3">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
@@ -242,16 +214,14 @@ const ChatInput = ({ onSend, disabled }) => {
       )}
       <div className="max-w-4xl mx-auto flex items-end space-x-3">
         <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.txt" className="hidden" onChange={handleFileChange} data-testid="file-input" />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          data-testid="attach-button"
-          className={`flex-shrink-0 w-10 h-10 rounded-full glass border flex items-center justify-center transition-all duration-200 ${attachedFile ? 'border-cyan-400/60 text-cyan-400' : 'border-white/10 text-white/50 hover:text-cyan-400 hover:border-cyan-400/40'}`}>
+        <button onClick={() => fileInputRef.current?.click()} data-testid="attach-button"
+          className={`flex-shrink-0 w-10 h-10 rounded-full glass border flex items-center justify-center transition-all duration-200 ${(attachedFile || activePdfName) ? 'border-cyan-400/60 text-cyan-400' : 'border-white/10 text-white/50 hover:text-cyan-400 hover:border-cyan-400/40'}`}>
           <Paperclip className="w-5 h-5" />
         </button>
         <div className="flex-1 glass rounded-2xl border border-white/10 px-4 py-2 flex items-center">
           <textarea ref={taRef} data-testid="chat-input" value={msg} onChange={(e) => setMsg(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder={attachedFile ? `Ask about ${attachedFile.name}...` : 'Ask CORTEX anything...'}
+            placeholder={activePdfName ? `Ask about ${activePdfName}...` : attachedFile ? `Ask about ${attachedFile.name}...` : 'Ask CORTEX anything...'}
             disabled={disabled} rows={1}
             className="flex-1 bg-transparent text-white placeholder-white/30 outline-none resize-none max-h-[120px] text-sm" style={{ minHeight: '24px' }} />
         </div>
@@ -308,6 +278,8 @@ export const ChatLayout = () => {
 
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  // ── PDF context stored per session: { [sessionId]: { file, name } } ──
+  const pdfContextRef = useRef({});
   const containerRef = useRef(null);
   const { addNotification } = useNotifications();
 
@@ -336,15 +308,9 @@ export const ChatLayout = () => {
               id: s.id,
               title: s.title || 'Conversation',
               lastMessage: s.messages[s.messages.length - 1]?.text?.slice(0, 50) || '',
-              messages: [
-                INIT_MSGS[0],
-                ...s.messages.map((m, idx) => ({
-                  id: `history-${s.id}-${idx}`,
-                  text: m.text || '',
-                  isUser: m.isUser || false,
-                  fileName: m.fileName || null
-                }))
-              ]
+              messages: [INIT_MSGS[0], ...s.messages.map((m, idx) => ({
+                id: `history-${s.id}-${idx}`, text: m.text || '', isUser: m.isUser || false, fileName: m.fileName || null
+              }))]
             }));
             setConvos(prev => {
               const localWithMessages = prev.filter(c => c.messages.length > 1);
@@ -362,16 +328,33 @@ export const ChatLayout = () => {
   const activeConvo = convos.find(c => c.id === activeId) || convos[0];
   const messages = activeConvo?.messages || INIT_MSGS;
 
+  // Active PDF for current session
+  const activePdf = pdfContextRef.current[activeId] || null;
+
   useEffect(() => {
     if (containerRef.current) {
       gsap.to(containerRef.current, { scrollTop: containerRef.current.scrollHeight, duration: 0.4, ease: 'power2.out' });
     }
   }, [messages]);
 
-  // ── Handle send — with or without file ──
+  const handleClearPdf = () => {
+    pdfContextRef.current = { ...pdfContextRef.current, [activeId]: null };
+    // Force re-render
+    setConvos(prev => [...prev]);
+  };
+
+  // ── Handle send ──
   const handleSend = async (text, file) => {
-    const userMsg = { id: Date.now().toString(), text, isUser: true, fileName: file?.name || null };
     const currentSessionId = activeId;
+
+    // If a new file is attached, store it as the session's PDF context
+    if (file) {
+      pdfContextRef.current = { ...pdfContextRef.current, [currentSessionId]: { file, name: file.name } };
+    }
+
+    // Use newly attached file OR existing session PDF context
+    const pdfToUse = file || activePdf?.file || null;
+    const userMsg = { id: Date.now().toString(), text, isUser: true, fileName: file?.name || activePdf?.name || null };
 
     setConvos(prev => prev.map(c => {
       if (c.id !== currentSessionId) return c;
@@ -386,10 +369,10 @@ export const ChatLayout = () => {
 
       let answer;
 
-      if (file) {
-        // ── PDF mode: send file as multipart to backend for text extraction ──
+      if (pdfToUse) {
+        // ── PDF mode: send file to backend for extraction + answer ──
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', pdfToUse);
         formData.append('query', text);
         formData.append('session_id', currentSessionId);
 
@@ -439,6 +422,8 @@ export const ChatLayout = () => {
   const handleSelect = (id) => setActiveId(id);
 
   const handleDelete = (id) => {
+    // Clear PDF context for deleted session
+    delete pdfContextRef.current[id];
     setConvos(prev => {
       const remaining = prev.filter(c => c.id !== id);
       if (remaining.length === 0) {
@@ -461,7 +446,9 @@ export const ChatLayout = () => {
         </button>
         <div>
           <h1 className="text-lg font-medium text-white">CORTEX Assistant</h1>
-          <p className="text-xs text-white/30">RAG + SQL Pipeline Active</p>
+          <p className="text-xs text-white/30">
+            {activePdf ? `📄 ${activePdf.name} · RAG + SQL Active` : 'RAG + SQL Pipeline Active'}
+          </p>
         </div>
         <div className="ml-auto flex items-center space-x-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -491,7 +478,12 @@ export const ChatLayout = () => {
               )}
             </div>
           </div>
-          <ChatInput onSend={handleSend} disabled={loading} />
+          <ChatInput
+            onSend={handleSend}
+            disabled={loading}
+            activePdfName={activePdf?.name || null}
+            onClearPdf={handleClearPdf}
+          />
         </div>
       </div>
     </div>
