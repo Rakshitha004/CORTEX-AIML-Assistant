@@ -17,12 +17,13 @@ from pymongo import MongoClient
 # ── Direct MongoDB connection for metrics ──────────────────────────────────────
 try:
     _mongo_url = os.getenv("MONGO_URL", "")
+    # CORRECT ✅
     _client = MongoClient(
-        _mongo_url,
-        ssl=True,
-        ssl_cert_reqs=ssl.CERT_NONE,
-        serverSelectionTimeoutMS=5000
-    )
+    _mongo_url,
+    tlsAllowInvalidCertificates=True,
+    serverSelectionTimeoutMS=5000
+)
+    
     _db = _client["cortex"]
     metrics_col = _db["metrics"]
     print("[Nodes] MongoDB metrics connection established!")
