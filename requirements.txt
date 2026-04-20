@@ -30,9 +30,9 @@ pdfplumber==0.10.3
 PyPDF2==3.0.1
 pdfminer.six==20221105
 
-# LangChain / LangGraph (all must match)
+# LangChain / LangGraph - all pinned to work together
 langchain==0.2.16
-langchain-core==0.2.38
+langchain-core==0.2.43
 langchain-community==0.2.16
 langchain-text-splitters==0.2.4
 langgraph==0.2.28
