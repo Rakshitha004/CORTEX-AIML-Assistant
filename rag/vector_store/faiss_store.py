@@ -8,31 +8,27 @@ import numpy as np
 from typing import List, Dict, Any, Optional
 from utils.logger import logger
 
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
 PINECONE_INDEX_NAME = "cortex-rag"
 
 
 class FAISSVectorStore:
-    """
-    Pinecone-backed vector store with the same interface as the old FAISS store.
-    retriever.py uses vector_store.metadata and vector_store.index.search()
-    so we emulate both.
-    """
-
     def __init__(self, embedding_dim: int = 1024):
         self.embedding_dim = embedding_dim
         self.metadata: List[Dict[str, Any]] = []
         self._pc = None
         self._index = None
-        self.index = self  # retriver.py calls vector_store.index.search()
+        self.index = self
         self._connect()
         self._load_metadata()
 
-    # ── Connect to Pinecone ───────────────────────────────────────────────────
     def _connect(self):
         try:
             from pinecone import Pinecone
-            self._pc = Pinecone(api_key=PINECONE_API_KEY)
+            api_key = os.getenv("PINECONE_API_KEY", "")
+            print(f"[Pinecone] API key found: {bool(api_key)}")
+            if not api_key:
+                raise ValueError("PINECONE_API_KEY is empty!")
+            self._pc = Pinecone(api_key=api_key)
             self._index = self._pc.Index(PINECONE_INDEX_NAME)
             stats = self._index.describe_index_stats()
             total = stats.get("total_vector_count", 0)
@@ -43,12 +39,7 @@ class FAISSVectorStore:
             print(f"[Pinecone] Connection failed: {e}")
             self._index = None
 
-    # ── Load all metadata from Pinecone into memory ───────────────────────────
     def _load_metadata(self):
-        """
-        Fetch all vectors from Pinecone and rebuild self.metadata list.
-        This keeps compatibility with BM25 in retriever.py which needs all docs.
-        """
         try:
             if self._index is None:
                 return
@@ -58,14 +49,11 @@ class FAISSVectorStore:
                 self.metadata = []
                 return
 
-            # Fetch in batches using list + fetch
             all_ids = []
-            # Use list endpoint to get all IDs
             try:
                 for id_batch in self._index.list(limit=100):
                     all_ids.extend(id_batch)
             except Exception:
-                # Fallback: if list not supported, metadata stays empty
                 self.metadata = []
                 return
 
@@ -73,7 +61,6 @@ class FAISSVectorStore:
                 self.metadata = []
                 return
 
-            # Fetch vectors + metadata in batches of 100
             self.metadata = []
             batch_size = 100
             for i in range(0, len(all_ids), batch_size):
@@ -96,15 +83,10 @@ class FAISSVectorStore:
             logger.error(f"[Pinecone] Failed to load metadata: {e}")
             self.metadata = []
 
-    # ── FAISS-compatible search method ────────────────────────────────────────
     def search(self, query_vec: np.ndarray, top_k: int) -> tuple:
-        """
-        Emulates faiss.index.search(query_vec, top_k)
-        Returns (distances, indices) just like FAISS.
-        """
         try:
             if self._index is None:
-                return np.array([[]] ), np.array([[]])
+                return np.array([[0.0]]), np.array([[-1]])
 
             query_list = query_vec[0].tolist()
             results = self._index.query(
@@ -117,7 +99,6 @@ class FAISSVectorStore:
             if not matches:
                 return np.array([[0.0]]), np.array([[-1]])
 
-            # Map Pinecone IDs back to metadata indices
             id_to_idx = {m.get("id", ""): i for i, m in enumerate(self.metadata)}
 
             distances = []
@@ -125,7 +106,6 @@ class FAISSVectorStore:
             for match in matches:
                 mid = match.get("id", "")
                 score = match.get("score", 0.0)
-                # Convert cosine similarity to distance (lower = better, like FAISS L2)
                 dist = 1.0 - score
                 idx = id_to_idx.get(mid, -1)
                 distances.append(dist)
@@ -137,7 +117,6 @@ class FAISSVectorStore:
             logger.error(f"[Pinecone] Search failed: {e}")
             return np.array([[0.0]]), np.array([[-1]])
 
-    # ── ntotal property (used in retriever) ──────────────────────────────────
     @property
     def ntotal(self) -> int:
         try:
@@ -148,10 +127,10 @@ class FAISSVectorStore:
         except Exception:
             return len(self.metadata)
 
-    # ── Add embeddings ────────────────────────────────────────────────────────
     def add_embeddings(self, embeddings: np.ndarray, metadata: List[Dict[str, Any]]) -> bool:
         try:
             if self._index is None:
+                print("[Pinecone] Cannot add embeddings — not connected!")
                 return False
 
             vectors = []
@@ -173,7 +152,6 @@ class FAISSVectorStore:
                     "length": meta.get("length", 0),
                 })
 
-            # Upsert in batches of 100
             batch_size = 100
             for i in range(0, len(vectors), batch_size):
                 self._index.upsert(vectors=vectors[i:i + batch_size])
@@ -187,13 +165,11 @@ class FAISSVectorStore:
             print(f"[Pinecone] Failed to add embeddings: {e}")
             return False
 
-    # ── Save (no-op for Pinecone — it auto-saves) ─────────────────────────────
     def save(self) -> bool:
         logger.info("[Pinecone] Save called — Pinecone auto-persists, no action needed")
         print("[Pinecone] Auto-saved to cloud!")
         return True
 
-    # ── Load (reload metadata from Pinecone) ─────────────────────────────────
     def load(self) -> bool:
         self._load_metadata()
         return True
@@ -217,7 +193,6 @@ class FAISSVectorStore:
             logger.error(f"[Pinecone] Clear failed: {e}")
 
 
-# ── Global instance ───────────────────────────────────────────────────────────
 _vector_store: Optional[FAISSVectorStore] = None
 
 
