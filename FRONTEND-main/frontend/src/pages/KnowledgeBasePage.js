@@ -84,7 +84,7 @@ export const KnowledgeBasePage = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${API_URL}/upload-document`, {
+      const response = await fetch(`${API_URL}/upload-and-index`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,

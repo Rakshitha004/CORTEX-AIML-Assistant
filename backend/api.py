@@ -556,3 +556,28 @@ def create_user(body: CreateUserRequest, current_user=Depends(get_current_user))
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "CORTEX API"}
+
+
+# ─── Chat PDF Query (direct LLM read, no indexing) ────────────────────────────
+class ChatPDFRequest(BaseModel):
+    query: str
+    pdf_text: str
+    session_id: str = ""
+
+@app.post("/query-with-pdf")
+async def query_with_pdf(request: ChatPDFRequest, current_user=Depends(get_current_user)):
+    try:
+        from together import Together
+        client_ai = Together(api_key=os.getenv("TOGETHER_API_KEY"))
+        response = client_ai.chat.completions.create(
+            model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            messages=[
+                {"role": "system", "content": f"You are a helpful assistant. Answer questions based only on this document:\n\n{request.pdf_text[:8000]}"},
+                {"role": "user", "content": request.query}
+            ],
+            max_tokens=1000
+        )
+        answer = response.choices[0].message.content
+        return {"answer": answer}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

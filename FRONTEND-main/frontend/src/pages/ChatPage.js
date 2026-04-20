@@ -12,6 +12,21 @@ const getToken = () => localStorage.getItem('cortex_token');
 // ── Generate a unique session ID ──────────────────────────────────────────────
 const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+// ── Extract text from a file (PDF or text-based) ─────────────────────────────
+const extractTextFromFile = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      resolve(typeof text === 'string' && text.trim().length > 50
+        ? text
+        : `[Binary file: ${file.name} — content could not be extracted as plain text]`);
+    };
+    reader.onerror = () => resolve(`[File: ${file.name}]`);
+    reader.readAsText(file);
+  });
+};
+
 /* ── Sidebar ── */
 const ChatSidebar = ({ isOpen, conversations, activeId, onSelect, onNew, onDelete }) => {
   const ref = useRef(null);
@@ -125,8 +140,6 @@ const ChatInput = ({ onSend, disabled }) => {
   const [recording, setRecording] = useState(false);
   const [recTime, setRecTime] = useState(0);
   const [attachedFile, setAttachedFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadDone, setUploadDone] = useState(false);
   const taRef = useRef(null);
   const recRef = useRef(null);
   const mediaRef = useRef(null);
@@ -150,42 +163,34 @@ const ChatInput = ({ onSend, disabled }) => {
     return () => clearInterval(recRef.current);
   }, [recording]);
 
-  const handleFileChange = async (e) => {
+  // ── File attach — just attach, no uploading/indexing ──
+  const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
-    if (!allowed.includes(file.type)) { alert('Only PDF and Word (.docx, .doc) files are supported.'); return; }
-    setAttachedFile(file);
-    setUploadDone(false);
-    setUploading(true);
-    try {
-      const token = getToken();
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch(`${API_URL}/upload-and-index`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Upload failed'); }
-      setUploadDone(true);
-    } catch (err) {
-      alert('Upload failed: ' + err.message);
-      setAttachedFile(null);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+    const allowed = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'text/plain',
+    ];
+    if (!allowed.includes(file.type)) {
+      alert('Only PDF, Word (.docx/.doc), or TXT files are supported.');
+      return;
     }
+    setAttachedFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const removeFile = () => { setAttachedFile(null); setUploadDone(false); if (fileInputRef.current) fileInputRef.current.value = ''; };
+  const removeFile = () => {
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const send = () => {
-    if (msg.trim() && !disabled && !uploading) {
-      onSend(msg.trim(), attachedFile?.name || null);
+    if (msg.trim() && !disabled) {
+      onSend(msg.trim(), attachedFile || null);
       setMsg('');
       setAttachedFile(null);
-      setUploadDone(false);
       if (taRef.current) taRef.current.style.height = 'auto';
     }
   };
@@ -242,33 +247,34 @@ const ChatInput = ({ onSend, disabled }) => {
       {attachedFile && (
         <div className="max-w-4xl mx-auto mb-3">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
-            {uploading ? <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-              : uploadDone ? <CheckCircle className="w-3.5 h-3.5 text-green-400" />
-              : <FileText className="w-3.5 h-3.5 text-cyan-400" />}
+            <CheckCircle className="w-3.5 h-3.5 text-green-400" />
             <span className="text-xs text-cyan-400 max-w-[200px] truncate">{attachedFile.name}</span>
-            {uploadDone && <span className="text-[10px] text-green-400">✓ Indexed</span>}
-            {uploading && <span className="text-[10px] text-cyan-400/70">Uploading...</span>}
-            <button onClick={removeFile} className="text-white/30 hover:text-red-400 transition-colors ml-1"><X className="w-3 h-3" /></button>
+            <span className="text-[10px] text-green-400">✓ Ready</span>
+            <button onClick={removeFile} className="text-white/30 hover:text-red-400 transition-colors ml-1">
+              <X className="w-3 h-3" />
+            </button>
           </div>
         </div>
       )}
       <div className="max-w-4xl mx-auto flex items-end space-x-3">
-        <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={handleFileChange} data-testid="file-input" />
-        <button onClick={() => fileInputRef.current?.click()} data-testid="attach-button" disabled={uploading}
-          className={`flex-shrink-0 w-10 h-10 rounded-full glass border flex items-center justify-center transition-all duration-200 ${attachedFile ? 'border-cyan-400/60 text-cyan-400' : 'border-white/10 text-white/50 hover:text-cyan-400 hover:border-cyan-400/40'} disabled:opacity-50`}>
+        <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.txt" className="hidden" onChange={handleFileChange} data-testid="file-input" />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          data-testid="attach-button"
+          className={`flex-shrink-0 w-10 h-10 rounded-full glass border flex items-center justify-center transition-all duration-200 ${attachedFile ? 'border-cyan-400/60 text-cyan-400' : 'border-white/10 text-white/50 hover:text-cyan-400 hover:border-cyan-400/40'}`}>
           <Paperclip className="w-5 h-5" />
         </button>
         <div className="flex-1 glass rounded-2xl border border-white/10 px-4 py-2 flex items-center">
           <textarea ref={taRef} data-testid="chat-input" value={msg} onChange={(e) => setMsg(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder={attachedFile ? `Ask about ${attachedFile.name}...` : 'Ask CORTEX anything...'}
-            disabled={disabled || uploading} rows={1}
+            disabled={disabled} rows={1}
             className="flex-1 bg-transparent text-white placeholder-white/30 outline-none resize-none max-h-[120px] text-sm" style={{ minHeight: '24px' }} />
         </div>
         <button onClick={startRec} data-testid="voice-button" className="flex-shrink-0 w-10 h-10 rounded-full glass border border-white/10 flex items-center justify-center text-white/50 hover:text-purple-400 hover:border-purple-400/40 transition-all duration-200">
           <Mic className="w-5 h-5" />
         </button>
-        <button onClick={send} data-testid="send-button" disabled={!msg.trim() || disabled || uploading}
+        <button onClick={send} data-testid="send-button" disabled={!msg.trim() || disabled}
           className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 flex items-center justify-center text-white hover:shadow-lg hover:scale-105 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100">
           <Send className="w-5 h-5" />
         </button>
@@ -287,7 +293,6 @@ const ChatInput = ({ onSend, disabled }) => {
 
 /* ── Main Layout ── */
 const INIT_MSGS = [{ id: '1', text: "Hi! I'm CORTEX 🤖 — powered by AI, trained for AIML.\n\nAsk me anything — I'm always online.", isUser: false }];
-
 const makeConvo = (id, title) => ({ id, title, lastMessage: '', messages: [...INIT_MSGS] });
 
 export const ChatLayout = () => {
@@ -299,12 +304,10 @@ export const ChatLayout = () => {
       const currentEmail = JSON.parse(localStorage.getItem('user') || '{}').email || '';
       if (saved && savedEmail === currentEmail) return JSON.parse(saved);
     } catch {}
-    // Generate a proper session ID for the default conversation
     return [makeConvo(generateSessionId(), 'New Conversation')];
   });
 
   const [activeId, setActiveId] = useState(() => {
-    // On load, use the first convo's id (which is now a proper session ID)
     try {
       const saved = localStorage.getItem('cortex_convos');
       const savedEmail = localStorage.getItem('cortex_convos_email');
@@ -324,7 +327,6 @@ export const ChatLayout = () => {
   const containerRef = useRef(null);
   const { addNotification } = useNotifications();
 
-  // Save to localStorage on every change
   useEffect(() => {
     try {
       const currentEmail = JSON.parse(localStorage.getItem('user') || '{}').email || '';
@@ -334,9 +336,7 @@ export const ChatLayout = () => {
   }, [convos]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('cortex_active_convo', activeId);
-    } catch {}
+    try { localStorage.setItem('cortex_active_convo', activeId); } catch {}
   }, [activeId]);
 
   // Load chat history from MongoDB on startup
@@ -344,15 +344,11 @@ export const ChatLayout = () => {
   useEffect(() => {
     const token = getToken();
     if (!token || historyLoaded) return;
-    fetch(`${API_URL}/chat/sessions`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
+    fetch(`${API_URL}/chat/sessions`, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => res.json())
       .then(data => {
         if (data.sessions && data.sessions.length > 0) {
-          const validSessions = data.sessions.filter(s =>
-            s.title && s.title !== 'New Conversation' && s.title.length > 3
-          );
+          const validSessions = data.sessions.filter(s => s.title && s.title !== 'New Conversation' && s.title.length > 3);
           if (validSessions.length > 0) {
             const loaded = validSessions.map(s => ({
               id: s.id,
@@ -372,7 +368,6 @@ export const ChatLayout = () => {
               const localWithMessages = prev.filter(c => c.messages.length > 1);
               const mongoIds = loaded.map(l => l.id);
               const newLocal = localWithMessages.filter(c => !mongoIds.includes(c.id));
-              // Don't add a fresh convo here — the one from init state is already there
               return [...loaded, ...newLocal];
             });
           }
@@ -385,17 +380,15 @@ export const ChatLayout = () => {
   const activeConvo = convos.find(c => c.id === activeId) || convos[0];
   const messages = activeConvo?.messages || INIT_MSGS;
 
-  // Auto-scroll
   useEffect(() => {
     if (containerRef.current) {
       gsap.to(containerRef.current, { scrollTop: containerRef.current.scrollHeight, duration: 0.4, ease: 'power2.out' });
     }
   }, [messages]);
 
-  const handleSend = async (text, fileName) => {
-    const userMsg = { id: Date.now().toString(), text, isUser: true, fileName };
-
-    // Use activeId as session_id — it's now always a proper unique session ID
+  // ── Handle send — with or without file ──
+  const handleSend = async (text, file) => {
+    const userMsg = { id: Date.now().toString(), text, isUser: true, fileName: file?.name || null };
     const currentSessionId = activeId;
 
     setConvos(prev => prev.map(c => {
@@ -408,16 +401,33 @@ export const ChatLayout = () => {
     try {
       const token = getToken();
       if (!token) throw new Error('Not authenticated. Please login again.');
-      const response = await fetch(`${API_URL}/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ query: text, session_id: currentSessionId }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Query failed');
-      const answer = data.answer || 'No response received.';
-      const aiMsg = { id: (Date.now() + 1).toString(), text: answer, isUser: false };
 
+      let answer;
+
+      if (file) {
+        // ── PDF / file mode: extract text, send to /query-with-pdf ──
+        const pdfText = await extractTextFromFile(file);
+        const response = await fetch(`${API_URL}/query-with-pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ query: text, pdf_text: pdfText, session_id: currentSessionId }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Query failed');
+        answer = data.answer || 'No response received.';
+      } else {
+        // ── Normal RAG/SQL query ──
+        const response = await fetch(`${API_URL}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ query: text, session_id: currentSessionId }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Query failed');
+        answer = data.answer || 'No response received.';
+      }
+
+      const aiMsg = { id: (Date.now() + 1).toString(), text: answer, isUser: false };
       setConvos(prev => prev.map(c => {
         if (c.id !== currentSessionId) return c;
         return { ...c, lastMessage: answer.slice(0, 50), messages: [...c.messages, aiMsg] };
@@ -426,19 +436,15 @@ export const ChatLayout = () => {
       addNotification({ title: 'Query Complete', message: `Response ready for: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`, type: 'chat' });
     } catch (error) {
       const errMsg = { id: (Date.now() + 1).toString(), text: `⚠️ ${error.message}`, isUser: false };
-      setConvos(prev => prev.map(c.id !== currentSessionId ? c : { ...c, messages: [...c.messages, errMsg] }));
+      setConvos(prev => prev.map(c => c.id !== currentSessionId ? c : { ...c, messages: [...c.messages, errMsg] }));
     } finally {
       setLoading(false);
     }
   };
 
   const handleNew = () => {
-    // Don't create new if current is already empty
     const current = convos.find(c => c.id === activeId);
-    if (current && current.messages.length <= 1) {
-      return; // Already on an empty conversation
-    }
-    // Always generate a unique session ID for new conversations
+    if (current && current.messages.length <= 1) return;
     const newSessionId = generateSessionId();
     setConvos(prev => [makeConvo(newSessionId, 'New Conversation'), ...prev]);
     setActiveId(newSessionId);
@@ -450,7 +456,6 @@ export const ChatLayout = () => {
     setConvos(prev => {
       const remaining = prev.filter(c => c.id !== id);
       if (remaining.length === 0) {
-        // Last convo deleted — create a fresh one
         const newSessionId = generateSessionId();
         setActiveId(newSessionId);
         return [makeConvo(newSessionId, 'New Conversation')];
