@@ -16,8 +16,7 @@ from pymongo import MongoClient
 # ── Direct MongoDB connection for metrics ──────────────────────────────────────
 try:
     _mongo_url = os.getenv("MONGO_URL", "")
-    _client = MongoClient(_mongo_url, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
-    _db = _client["cortex"]
+    _client = MongoClient(_mongo_url, tls=True, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
     metrics_col = _db["metrics"]
     print("[Nodes] MongoDB metrics connection established!")
 except Exception as e:
