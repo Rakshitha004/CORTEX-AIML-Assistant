@@ -11,12 +11,19 @@ from datetime import datetime
 import time
 import csv
 import os
+import ssl
 from pymongo import MongoClient
 
 # ── Direct MongoDB connection for metrics ──────────────────────────────────────
 try:
     _mongo_url = os.getenv("MONGO_URL", "")
-    _client = MongoClient(_mongo_url, tls=True, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
+    _client = MongoClient(
+        _mongo_url,
+        ssl=True,
+        ssl_cert_reqs=ssl.CERT_NONE,
+        serverSelectionTimeoutMS=5000
+    )
+    _db = _client["cortex"]
     metrics_col = _db["metrics"]
     print("[Nodes] MongoDB metrics connection established!")
 except Exception as e:
@@ -26,7 +33,6 @@ except Exception as e:
 METRICS_CSV = "cortex_metrics.csv"
 
 def save_metrics(db, metrics: dict):
-    # Always use the direct metrics_col connection
     target_db = metrics_col if metrics_col is not None else db
     try:
         if target_db is not None:
