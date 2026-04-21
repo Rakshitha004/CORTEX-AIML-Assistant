@@ -11,6 +11,11 @@ const getToken = () => localStorage.getItem('cortex_token');
 
 const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+const cleanPreviewText = (text) => {
+  if (!text) return '';
+  return text.replace(/\|/g, '').replace(/[-#*`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 50);
+};
+
 /* ── Sidebar ── */
 const ChatSidebar = ({ isOpen, conversations, activeId, onSelect, onNew, onDelete }) => {
   const ref = useRef(null);
@@ -38,7 +43,7 @@ const ChatSidebar = ({ isOpen, conversations, activeId, onSelect, onNew, onDelet
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-white font-medium truncate">{c.title}</div>
-                    <div className="text-xs text-white/30 truncate mt-0.5">{c.lastMessage}</div>
+                    <div className="text-xs text-white/30 truncate mt-0.5">{cleanPreviewText(c.lastMessage)}</div>
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); onDelete(c.id); }} data-testid={`delete-conv-${c.id}`} className="opacity-0 group-hover:opacity-100 ml-2 text-white/30 hover:text-red-400 transition-opacity">
                     <Trash2 className="w-4 h-4" />
@@ -389,10 +394,11 @@ export const ChatLayout = () => {
         answer = data.answer || 'No response received.';
       }
 
+      // ✅ FIX: Clean markdown from sidebar preview
       const aiMsg = { id: (Date.now() + 1).toString(), text: answer, isUser: false };
       setConvos(prev => prev.map(c => {
         if (c.id !== currentSessionId) return c;
-        return { ...c, lastMessage: answer.slice(0, 50), messages: [...c.messages, aiMsg] };
+        return { ...c, lastMessage: cleanPreviewText(answer), messages: [...c.messages, aiMsg] };
       }));
       addNotification({ title: 'Query Complete', message: `Response ready for: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`, type: 'chat' });
     } catch (error) {
