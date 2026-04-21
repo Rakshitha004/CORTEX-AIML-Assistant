@@ -310,13 +310,24 @@ def run_query(request: QueryRequest, current_user=Depends(get_current_user)):
     result = graph.invoke(state)
     intent = result.get("intent", "unknown")
 
-    query_words = len(request.query.split())
-    if query_words <= 5:
-        complexity = "Simple"
-    elif query_words <= 10:
-        complexity = "Medium"
-    else:
+    # NEW - intent + keyword based (accurate)
+    q_lower = request.query.lower()
+    complex_keywords = [
+    "compare", "difference", "vs", "versus", "explain", "why", "how does",
+    "analyze", "analyse", "list all", "all students", "every", "across all",
+    "research", "publication", "project", "collaboration", "multiple"
+]
+    simple_keywords = [
+    "who is", "what is", "hod", "head", "name", "vision", "mission",
+    "topper", "highest cgpa", "how many"
+]
+
+    if any(k in q_lower for k in complex_keywords):
         complexity = "Complex"
+    elif any(k in q_lower for k in simple_keywords) or len(request.query.split()) <= 6:
+        complexity = "Simple"
+    else:
+        complexity = "Medium"
 
     try:
         chats_col.insert_one({
@@ -382,6 +393,7 @@ def get_all_chats(current_user=Depends(get_current_user)):
     return {"chats": chats}
 
 # ─── Metrics Summary & Recent ─────────────────────────────────────────────────
+# ─── Metrics Summary & Recent ─────────────────────────────────────────────────
 @app.get("/metrics/summary")
 def metrics_summary(current_user=Depends(get_current_user)):
     try:
@@ -412,12 +424,20 @@ def metrics_summary(current_user=Depends(get_current_user)):
         sql_total = [m for m in all_metrics if m.get("pipeline") == "SQL"]
         sql_success = [m for m in sql_total if m.get("success") == True]
         sql_rate = round((len(sql_success) / len(sql_total)) * 100) if sql_total else 0
+
+        # Complexity counts from all_metrics
+        simple_count = sum(1 for m in all_metrics if m.get("query_complexity") == "Simple")
+        medium_count = sum(1 for m in all_metrics if m.get("query_complexity") == "Medium")
+        complex_count = sum(1 for m in all_metrics if m.get("query_complexity") == "Complex")
+
     except Exception as e:
         print(f"Metrics summary error: {e}")
         total, rag, sql = 0, 0, 0
         avg_grounding = 0.0
         avg_rag_time = 0
         sql_rate = 0
+        simple_count, medium_count, complex_count = 0, 0, 0
+
     return {
         "total_queries": total,
         "rag_queries": rag,
@@ -425,7 +445,12 @@ def metrics_summary(current_user=Depends(get_current_user)):
         "avg_grounding_score": avg_grounding,
         "avg_rag_response_time_ms": avg_rag_time,
         "avg_sql_response_time_ms": 400,
-        "sql_success_rate": sql_rate
+        "sql_success_rate": sql_rate,
+        "complexity": {
+            "Simple": simple_count,
+            "Medium": medium_count,
+            "Complex": complex_count
+        }
     }
 
 @app.get("/metrics/recent")

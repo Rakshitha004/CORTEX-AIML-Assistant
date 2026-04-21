@@ -93,8 +93,8 @@ export const AdminDashboard = () => {
     { name: 'SQL', value: summary.sql_queries, color: '#8B5CF6' },
   ] : [];
 
-  const complexityCounts = { Simple: 0, Medium: 0, Complex: 0 };
-  recentMetrics.forEach(m => { if (m.query_complexity) complexityCounts[m.query_complexity]++; });
+  // ✅ FIX: Read complexity from summary API (all-time counts), not just recent 20
+  const complexityCounts = summary?.complexity || { Simple: 0, Medium: 0, Complex: 0 };
   const complexityData = [
     { name: 'Simple', v: complexityCounts.Simple, color: '#00F0FF' },
     { name: 'Medium', v: complexityCounts.Medium, color: '#8B5CF6' },
