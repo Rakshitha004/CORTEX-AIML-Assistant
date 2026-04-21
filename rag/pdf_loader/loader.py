@@ -1,8 +1,8 @@
 """
 PDF document loader for RAG pipeline.
 """
-
 import os
+import re
 from typing import List, Dict, Any
 from pathlib import Path
 from config.settings import PDF_DIR
@@ -20,6 +20,51 @@ try:
     PDFPLUMBER_AVAILABLE = True
 except ImportError:
     PDFPLUMBER_AVAILABLE = False
+
+
+def clean_text(text: str) -> str:
+    """
+    Clean extracted PDF text:
+    - Remove garbled/rotated table header lines
+    - Remove lines with too many non-ASCII characters
+    - Remove lines that are mostly numbers/special chars (table borders)
+    - Keep meaningful content lines
+    """
+    clean_lines = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+
+        # Skip very short lines
+        if len(line) < 3:
+            continue
+
+        # Skip lines that are mostly non-ASCII (garbled rotated text)
+        ascii_chars = sum(1 for c in line if c.isascii())
+        if len(line) > 0 and (ascii_chars / len(line)) < 0.6:
+            continue
+
+        # Skip lines that look like garbled table headers
+        # (many single characters separated by spaces like "r n e i p t t")
+        words = line.split()
+        if len(words) > 5:
+            single_char_words = sum(1 for w in words if len(w) == 1)
+            if single_char_words / len(words) > 0.5:
+                continue
+
+        # Skip lines that are just dots, dashes, or repeated chars
+        if re.match(r'^[.\-_=\s]+$', line):
+            continue
+
+        # Skip lines that are mostly numbers and dots (table borders/page numbers)
+        alpha_chars = sum(1 for c in line if c.isalpha())
+        if len(line) > 10 and alpha_chars / len(line) < 0.2:
+            continue
+
+        clean_lines.append(line)
+
+    return '\n'.join(clean_lines)
 
 
 class PDFLoader:
@@ -48,6 +93,8 @@ class PDFLoader:
                         if text:
                             text_content.append(text)
                     full_text = "\n".join(text_content)
+                    # Clean garbled text
+                    full_text = clean_text(full_text)
             except Exception as e:
                 logger.warning(f"pdfplumber failed for {pdf_file.name}: {e}")
                 full_text = ""
@@ -63,6 +110,8 @@ class PDFLoader:
                     if text:
                         text_content.append(text)
                 full_text = "\n".join(text_content)
+                # Clean garbled text
+                full_text = clean_text(full_text)
             except Exception as e:
                 logger.warning(f"PyPDF2 failed for {pdf_file.name}: {e}")
                 full_text = ""
@@ -88,12 +137,15 @@ class PDFLoader:
         if not self.pdf_directory.exists():
             logger.warning(f"PDF directory not found: {self.pdf_directory}")
             return documents
+
         pdf_files = list(self.pdf_directory.rglob("*.pdf"))
         logger.info(f"Found {len(pdf_files)} PDF files in {self.pdf_directory}")
+
         for pdf_file in pdf_files:
             doc = self.load_single_pdf(str(pdf_file))
             if doc["content"]:
                 documents.append(doc)
+
         logger.info(f"Successfully loaded {len(documents)} documents")
         return documents
 
