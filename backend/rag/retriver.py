@@ -6,7 +6,7 @@ from sentence_transformers import CrossEncoder
 from functools import lru_cache
 import hashlib
 
-RAG_PROJECT_PATH = Path("C:/Dev/Multi-Agent-Dept-Digital-Asst/Multi-Agent-Dept-Digital-Asst")
+RAG_PROJECT_PATH = Path("C:/Dev/AIML-Dept-Digital-Assistant/aiml-department-digital-assistant")
 sys.path.insert(0, str(RAG_PROJECT_PATH))
 
 # ─── Cross-Encoder Reranker (loaded once) ─────────────────
@@ -166,7 +166,7 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         # ── Dynamic top_k ─────────────────────────────────
         if any(kw in query_lower for kw in ["faculty", "professor", "staff", "hod", "head of department", "lecturer", "members", "who are", "list all"]):
             top_k = 20
-        elif any(kw in query_lower for kw in ["research", "publication", "project", "paper"]):
+        elif any(kw in query_lower for kw in ["research", "publication", "paper", "project"]):
             top_k = 15
         else:
             top_k = 10
