@@ -67,14 +67,35 @@ class FAISSVectorStore:
             for i in range(0, len(all_ids), batch_size):
                 batch_ids = all_ids[i:i + batch_size]
                 fetch_result = self._index.fetch(ids=batch_ids)
-                vectors = fetch_result.get("vectors", {})
+
+                # Handle both object and dict response from Pinecone SDK
+                if hasattr(fetch_result, 'vectors'):
+                    vectors = fetch_result.vectors or {}
+                else:
+                    vectors = fetch_result.get("vectors", {})
+
                 for vid, vdata in vectors.items():
-                    meta = vdata.get("metadata", {})
+                    # Handle both object and dict metadata
+                    if hasattr(vdata, 'metadata'):
+                        meta = vdata.metadata or {}
+                    else:
+                        meta = vdata.get("metadata", {})
+
+                    # Handle both object and dict meta fields
+                    if hasattr(meta, 'get'):
+                        content = meta.get("content", "")
+                        doc_name = meta.get("doc_name", "")
+                        length = meta.get("length", 0)
+                    else:
+                        content = getattr(meta, 'content', "")
+                        doc_name = getattr(meta, 'doc_name', "")
+                        length = getattr(meta, 'length', 0)
+
                     self.metadata.append({
                         "id": vid,
-                        "content": meta.get("content", ""),
-                        "doc_name": meta.get("doc_name", ""),
-                        "length": meta.get("length", 0),
+                        "content": content,
+                        "doc_name": doc_name,
+                        "length": length,
                     })
 
             logger.info(f"[Pinecone] Loaded {len(self.metadata)} metadata entries")
@@ -103,27 +124,48 @@ class FAISSVectorStore:
                 include_metadata=True
             )
 
-            matches = results.get("matches", [])
+            # Handle both object and dict response
+            if hasattr(results, 'matches'):
+                matches = results.matches or []
+            else:
+                matches = results.get("matches", [])
+
             if not matches:
                 return np.array([[0.0]]), np.array([[-1]])
 
-            id_to_idx = {m.get("id", ""): i for i, m in enumerate(self.metadata)}
+            id_to_idx = {m.get("id", "") if hasattr(m, 'get') else getattr(m, 'id', ""): i
+                        for i, m in enumerate(self.metadata)}
 
             distances = []
             indices = []
             for match in matches:
-                mid = match.get("id", "")
-                score = match.get("score", 0.0)
+                if hasattr(match, 'id'):
+                    mid = match.id or ""
+                    score = match.score or 0.0
+                    meta = match.metadata or {}
+                else:
+                    mid = match.get("id", "")
+                    score = match.get("score", 0.0)
+                    meta = match.get("metadata", {})
+
                 dist = 1.0 - score
 
                 if mid not in id_to_idx:
-                    meta = match.get("metadata", {})
                     new_idx = len(self.metadata)
+                    if hasattr(meta, 'get'):
+                        content = meta.get("content", "")
+                        doc_name = meta.get("doc_name", "")
+                        length = meta.get("length", 0)
+                    else:
+                        content = getattr(meta, 'content', "")
+                        doc_name = getattr(meta, 'doc_name', "")
+                        length = getattr(meta, 'length', 0)
+
                     self.metadata.append({
                         "id": mid,
-                        "content": meta.get("content", ""),
-                        "doc_name": meta.get("doc_name", ""),
-                        "length": meta.get("length", 0),
+                        "content": content,
+                        "doc_name": doc_name,
+                        "length": length,
                     })
                     id_to_idx[mid] = new_idx
 
@@ -159,7 +201,14 @@ class FAISSVectorStore:
                 return False
 
             vectors = []
+            skipped = 0
             for i, (emb, meta) in enumerate(zip(embeddings, metadata)):
+                # Skip zero vectors
+                if not any(v != 0 for v in emb.tolist()):
+                    print(f"[Pinecone] Skipping zero vector: {meta.get('id', '')}")
+                    skipped += 1
+                    continue
+
                 vid = meta.get("id", f"vec_{len(self.metadata) + i}")
                 vectors.append({
                     "id": str(vid),
@@ -177,8 +226,11 @@ class FAISSVectorStore:
                     "length": meta.get("length", 0),
                 })
 
+            if skipped > 0:
+                print(f"[Pinecone] Skipped {skipped} zero vectors")
+
             batch_size = 50
-            total_batches = (len(vectors) - 1) // batch_size + 1
+            total_batches = (len(vectors) - 1) // batch_size + 1 if vectors else 0
             total_upserted = 0
 
             for i in range(0, len(vectors), batch_size):
@@ -198,7 +250,6 @@ class FAISSVectorStore:
                         if attempt == 2:
                             print(f"[Pinecone] Batch {batch_num} FAILED after 3 attempts!")
 
-            # Wait for Pinecone to stabilize
             print("[Pinecone] Waiting 15 seconds for Pinecone to stabilize...")
             time.sleep(15)
 
