@@ -31,6 +31,13 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 from backend.graph.workflow import graph
 
+# ── Force all env vars into os.environ for RAG modules ──
+import os
+_pinecone_key = os.getenv("PINECONE_API_KEY", "")
+if _pinecone_key:
+    os.environ["PINECONE_API_KEY"] = _pinecone_key
+    print(f"[API] Pinecone key injected: {bool(_pinecone_key)}")
+
 # ─── Base directory (project root) ───────────────────────────────────────────
 BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
