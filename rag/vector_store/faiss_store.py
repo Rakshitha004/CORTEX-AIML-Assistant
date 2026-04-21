@@ -7,16 +7,6 @@ import os
 import numpy as np
 from typing import List, Dict, Any, Optional
 from utils.logger import logger
-import os
-import numpy as np
-from typing import List, Dict, Any, Optional
-from utils.logger import logger
-
-# ── Load env variables ────────────────────────────────────
-from dotenv import load_dotenv
-from pathlib import Path
-# Load .env from project root
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 PINECONE_INDEX_NAME = "cortex-rag"
 
@@ -28,8 +18,6 @@ class FAISSVectorStore:
         self._pc = None
         self._index = None
         self.index = self
-        # self._connect()      ← ADD # here
-        # self._load_metadata() ← ADD # here
         self._connect()
         self._load_metadata()
 
@@ -97,13 +85,22 @@ class FAISSVectorStore:
 
     def search(self, query_vec: np.ndarray, top_k: int) -> tuple:
         try:
+            # ── Reconnect if not connected ────────────────────────────────
+            if self._index is None:
+                self._connect()
+
+            # ── Reload metadata if empty ──────────────────────────────────
+            if not self.metadata:
+                print("[Pinecone] Metadata empty, reloading...")
+                self._load_metadata()
+
             if self._index is None:
                 return np.array([[0.0]]), np.array([[-1]])
 
             query_list = query_vec[0].tolist()
             results = self._index.query(
                 vector=query_list,
-                top_k=min(top_k, max(1, len(self.metadata))),
+                top_k=min(top_k, max(1, self.ntotal)),
                 include_metadata=True
             )
 
@@ -119,6 +116,19 @@ class FAISSVectorStore:
                 mid = match.get("id", "")
                 score = match.get("score", 0.0)
                 dist = 1.0 - score
+
+                # If id not in metadata, add it dynamically
+                if mid not in id_to_idx:
+                    meta = match.get("metadata", {})
+                    new_idx = len(self.metadata)
+                    self.metadata.append({
+                        "id": mid,
+                        "content": meta.get("content", ""),
+                        "doc_name": meta.get("doc_name", ""),
+                        "length": meta.get("length", 0),
+                    })
+                    id_to_idx[mid] = new_idx
+
                 idx = id_to_idx.get(mid, -1)
                 distances.append(dist)
                 indices.append(idx)
@@ -145,7 +155,7 @@ class FAISSVectorStore:
                 print("[Pinecone] Trying lazy connect...")
                 self._connect()
                 self._load_metadata()
-            
+
             if self._index is None:
                 print("[Pinecone] Cannot add embeddings — not connected!")
                 return False
@@ -215,6 +225,6 @@ _vector_store: Optional[FAISSVectorStore] = None
 
 def get_vector_store(embedding_dim: int = 1024) -> FAISSVectorStore:
     global _vector_store
-    if _vector_store is None:
+    if _vector_store is None or _vector_store._index is None:
         _vector_store = FAISSVectorStore(embedding_dim)
     return _vector_store
