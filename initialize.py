@@ -2,13 +2,19 @@
 Initialization script for the LLM Student Assistant.
 Loads student data and initializes RAG system.
 """
-
 import sys
+from dotenv import load_dotenv
+load_dotenv()  # MUST be first!
+
 import numpy as np
 from pathlib import Path
 
-# Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Force fresh vector store — reset global cache
+import importlib
+import rag.vector_store.faiss_store as fs
+fs._vector_store = None  # Reset cached instance so it reconnects with loaded API key
 
 from config.settings import PDF_DIR
 from rag.pdf_loader.loader import get_pdf_loader
@@ -23,19 +29,10 @@ def main():
     logger.info("CORTEX - Re-indexing All PDFs")
     logger.info("=" * 60)
 
-    # ── Also include uploaded_docs folder ──────────────────
-    PDF_ROOT = Path(r"C:\Dev\Multi-Agent-Dept-Digital-Asst\Multi-Agent-Dept-Digital-Asst\data\pdf_documents")
-    UPLOAD_DIR = Path(r"C:\Dev\AIML-Dept-Digital-Assistant\aiml-department-digital-assistant\uploaded_docs")
+    PDF_ROOT = Path(r"C:\Dev\AIML-Dept-Digital-Assistant\aiml-department-digital-assistant\uploaded_docs")
 
     all_pdfs = list(PDF_ROOT.rglob("*.pdf"))
-
-    # Add uploaded PDFs if folder exists
-    if UPLOAD_DIR.exists():
-        uploaded_pdfs = list(UPLOAD_DIR.rglob("*.pdf"))
-        all_pdfs.extend(uploaded_pdfs)
-        logger.info(f"Found {len(uploaded_pdfs)} uploaded PDFs in uploaded_docs")
-
-    logger.info(f"Found {len(all_pdfs)} PDFs total")
+    logger.info(f"Found {len(all_pdfs)} PDFs in uploaded_docs")
 
     if len(all_pdfs) == 0:
         logger.error("No PDFs found! Check your PDF directories.")
@@ -77,7 +74,7 @@ def main():
         logger.error("No embeddings generated!")
         return
 
-    logger.info("Creating fresh FAISS index...")
+    logger.info("Creating fresh Pinecone index...")
 
     metadata = [
         {
@@ -92,11 +89,15 @@ def main():
     vector_store.add_embeddings(np.array(all_embeddings).astype("float32"), metadata)
     vector_store.save()
 
-    # Safe check
-    if vector_store.index is not None:
-        logger.info(f"Done! Vector store now has {vector_store.index.ntotal} vectors")
-    else:
-        logger.info(f"Done! Vector store saved with {len(all_chunks)} chunks")
+    # Verify with Pinecone directly
+    import os
+    from pinecone import Pinecone
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+    idx = pc.Index("cortex-rag")
+    stats = idx.describe_index_stats()
+    actual_count = stats.get("total_vector_count", 0)
+    logger.info(f"✅ Pinecone confirmed: {actual_count} vectors in cloud!")
+    print(f"✅ Pinecone confirmed: {actual_count} vectors in cloud!")
 
     logger.info("=" * 60)
     logger.info("Re-indexing Complete!")

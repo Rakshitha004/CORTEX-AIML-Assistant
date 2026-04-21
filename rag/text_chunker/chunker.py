@@ -2,6 +2,7 @@
 Text chunking for RAG pipeline.
 """
 
+import re
 from typing import List, Dict, Any
 from config.settings import CHUNK_SIZE, CHUNK_OVERLAP
 from utils.logger import logger
@@ -35,12 +36,15 @@ class TextChunker:
         current_chunk = ""
         chunk_id = 0
 
+        # Create a safe ASCII-only prefix from doc_name for unique IDs
+        safe_doc = re.sub(r'[^a-zA-Z0-9]', '_', doc_name)
+
         for sentence in sentences:
             test_chunk = current_chunk + sentence + ". "
 
             if len(test_chunk) > self.chunk_size and current_chunk:
                 chunks.append({
-                    "id": chunk_id,
+                    "id": f"{safe_doc}_{chunk_id}",
                     "doc_name": doc_name,
                     "content": current_chunk.strip(),
                     "length": len(current_chunk),
@@ -54,7 +58,7 @@ class TextChunker:
 
         if current_chunk.strip():
             chunks.append({
-                "id": chunk_id,
+                "id": f"{safe_doc}_{chunk_id}",
                 "doc_name": doc_name,
                 "content": current_chunk.strip(),
                 "length": len(current_chunk),

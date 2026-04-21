@@ -4,6 +4,7 @@ Same interface as before so retriever.py needs no changes.
 """
 
 import os
+import time
 import numpy as np
 from typing import List, Dict, Any, Optional
 from utils.logger import logger
@@ -85,11 +86,9 @@ class FAISSVectorStore:
 
     def search(self, query_vec: np.ndarray, top_k: int) -> tuple:
         try:
-            # ── Reconnect if not connected ────────────────────────────────
             if self._index is None:
                 self._connect()
 
-            # ── Reload metadata if empty ──────────────────────────────────
             if not self.metadata:
                 print("[Pinecone] Metadata empty, reloading...")
                 self._load_metadata()
@@ -117,7 +116,6 @@ class FAISSVectorStore:
                 score = match.get("score", 0.0)
                 dist = 1.0 - score
 
-                # If id not in metadata, add it dynamically
                 if mid not in id_to_idx:
                     meta = match.get("metadata", {})
                     new_idx = len(self.metadata)
@@ -179,12 +177,36 @@ class FAISSVectorStore:
                     "length": meta.get("length", 0),
                 })
 
-            batch_size = 100
-            for i in range(0, len(vectors), batch_size):
-                self._index.upsert(vectors=vectors[i:i + batch_size])
+            batch_size = 50
+            total_batches = (len(vectors) - 1) // batch_size + 1
+            total_upserted = 0
 
-            logger.info(f"[Pinecone] Upserted {len(vectors)} vectors")
-            print(f"[Pinecone] Upserted {len(vectors)} vectors successfully!")
+            for i in range(0, len(vectors), batch_size):
+                batch = vectors[i:i + batch_size]
+                batch_num = i // batch_size + 1
+
+                for attempt in range(3):
+                    try:
+                        self._index.upsert(vectors=batch)
+                        total_upserted += len(batch)
+                        print(f"[Pinecone] Batch {batch_num}/{total_batches} done ({total_upserted}/{len(vectors)})")
+                        time.sleep(1)
+                        break
+                    except Exception as e:
+                        print(f"[Pinecone] Batch {batch_num} attempt {attempt+1} failed: {e}")
+                        time.sleep(5)
+                        if attempt == 2:
+                            print(f"[Pinecone] Batch {batch_num} FAILED after 3 attempts!")
+
+            # Wait for Pinecone to stabilize
+            print("[Pinecone] Waiting 15 seconds for Pinecone to stabilize...")
+            time.sleep(15)
+
+            stats = self._index.describe_index_stats()
+            actual = stats.get("total_vector_count", 0)
+            logger.info(f"[Pinecone] Upserted {total_upserted} vectors")
+            print(f"[Pinecone] Upserted {total_upserted} vectors successfully!")
+            print(f"[Pinecone] Pinecone confirmed: {actual} vectors in cloud!")
             return True
 
         except Exception as e:
