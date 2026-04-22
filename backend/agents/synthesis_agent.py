@@ -10,16 +10,26 @@ SQL_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"
 RAG_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"
 
 
-def compute_grounding_score(query: str, context: str) -> float:
+def compute_grounding_score(query: str, answer: str, context: str) -> float:
+    """Improved grounding: measures how much the ANSWER is grounded in context"""
     try:
-        query_words = set(re.findall(r'\b\w{4,}\b', query.lower()))
+        answer_words = set(re.findall(r'\b\w{4,}\b', answer.lower()))
         context_words = set(re.findall(r'\b\w{4,}\b', context.lower()))
-        if not query_words:
+
+        if not answer_words:
             return 0.0
-        overlap = query_words & context_words
-        score = round(len(overlap) / len(query_words), 2)
-        if len(context) > 500:
-            score = min(1.0, score + 0.1)
+
+        overlap = answer_words & context_words
+        score = len(overlap) / len(answer_words)
+
+        # Bonus for rich context
+        if len(context) > 1000:
+            score = min(1.0, score + 0.05)
+
+        # Bonus for detailed answer
+        if len(answer) > 200:
+            score = min(1.0, score + 0.05)
+
         return round(min(1.0, score), 2)
     except Exception:
         return 0.0
@@ -29,23 +39,21 @@ def fallback_sql_format(query: str, result: list) -> str:
     """Clean fallback formatter when Together AI times out"""
     if not result:
         return "No records found."
-    
+
     headers = list(result[0].keys())
-    
-    # Build markdown table
+
     table = "| # | " + " | ".join(h.upper() for h in headers) + " |\n"
     table += "|---|" + "---|" * len(headers) + "\n"
-    
-    display_rows = result[:15]  # Show max 15 rows
+
+    display_rows = result[:15]
     for i, row in enumerate(display_rows, 1):
         table += f"| {i} | " + " | ".join(str(v) for v in row.values()) + " |\n"
-    
+
     if len(result) > 15:
         table += f"\n*Showing 15 of {len(result)} records.*"
-    
-    # Add summary
+
     table += f"\n\n**Total records:** {len(result)}"
-    
+
     return table
 
 
@@ -54,7 +62,6 @@ def format_sql_result(query, result):
     if not result:
         return "No records found.", 0.0
 
-    # Limit result size to avoid timeout
     display_result = result[:20]
     result_str = ""
     for row in display_result:
@@ -106,7 +113,6 @@ Answer:"""
         return answer, grounding
     except Exception as err:
         print(f"TOGETHER ERROR: {err}")
-        # Use clean fallback formatter
         return fallback_sql_format(query, result), 0.5
 
 
@@ -117,10 +123,7 @@ def format_rag_result(query, context):
     context_str = re.sub(r"\n{3,}", "\n\n", context_str)
     context_str = re.sub(r"\s{3,}", " ", context_str)
     context_str = context_str.strip()
-    # Reduce context size to avoid timeout
     context_str = context_str[:12000]
-
-    grounding_score = compute_grounding_score(query, context_str)
 
     prompt = f"""You are CORTEX, an AI assistant for the AIML department at DSCE Bengaluru.
 Answer strictly based ONLY on the provided context. Follow these rules:
@@ -155,6 +158,10 @@ Answer:"""
         )
         data = response.json()
         answer = data["choices"][0]["message"]["content"]
+
+        # ✅ FIX: Compute grounding on ANSWER vs CONTEXT (not query vs context)
+        grounding_score = compute_grounding_score(query, answer, context_str)
+
         return answer, grounding_score
     except Exception as err:
         print(f"TOGETHER ERROR: {err}")
