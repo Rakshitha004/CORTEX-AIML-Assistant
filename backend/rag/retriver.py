@@ -1,13 +1,18 @@
 import sys
+import os
+import re
 import numpy as np
+import requests
+import hashlib
 from pathlib import Path
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
 from functools import lru_cache
-import hashlib
 
 RAG_PROJECT_PATH = Path("C:/Dev/AIML-Dept-Digital-Assistant/aiml-department-digital-assistant")
 sys.path.insert(0, str(RAG_PROJECT_PATH))
+
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
 # ─── Cross-Encoder Reranker (loaded once) ─────────────────
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -27,6 +32,58 @@ def tokenize(text: str):
 
 def get_cache_key(query: str) -> str:
     return hashlib.md5(query.lower().strip().encode()).hexdigest()
+
+
+# ─── Query Expansion ──────────────────────────────────────
+def expand_query(query: str) -> str:
+    """Expand short/ambiguous queries for better retrieval"""
+    try:
+        # Skip expansion for already detailed queries
+        if len(query.split()) > 10:
+            return query
+
+        response = requests.post(
+            "https://api.together.xyz/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {TOGETHER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                "messages": [{"role": "user", "content": f"""You are a query expansion assistant for AIML department at DSCE Bangalore.
+
+Expand this short query into a detailed search query.
+Keep it under 2 sentences.
+Add relevant context like department name, full forms, synonyms.
+Do NOT answer the question — just expand it.
+
+Examples:
+"who is hod" → "Who is the Head of Department HOD of AIML department at DSCE Bangalore?"
+"list faculty" → "List all faculty members professors lecturers and staff of AIML department at DSCE"
+"industry visits" → "What are the industry visits company visits and industrial tours conducted by AIML department students at DSCE?"
+"research areas" → "What are the research areas publications projects and patents of AIML department faculty at DSCE Bangalore?"
+"vision" → "What is the vision and mission statement of AIML department at DSCE Bangalore?"
+"hod name" → "What is the name of Head of Department HOD of AIML department at DSCE?"
+"placement" → "What are the placement details companies and statistics for AIML department students at DSCE?"
+"events" → "What are the events workshops seminars and activities conducted by AIML department at DSCE?"
+"hackathon" → "What hackathons and competitions were organized or participated in by AIML department students?"
+"mou" → "What are the MOUs memorandum of understanding and collaborations signed by AIML department?"
+
+Query: "{query}"
+Expanded:"""}],
+                "max_tokens": 150,
+                "temperature": 0
+            },
+            timeout=15
+        )
+        expanded = response.json()["choices"][0]["message"]["content"].strip()
+        # Clean up any quotes
+        expanded = expanded.strip('"').strip("'")
+        print(f"[Query Expansion] '{query}' → '{expanded}'")
+        return expanded
+    except Exception as e:
+        print(f"[Query Expansion Failed] {e} — using original query")
+        return query  # fallback to original
 
 
 # ─── Recall@K Metric ──────────────────────────────────────
@@ -113,6 +170,15 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
             elif any(kw in query_lower for kw in ["research", "publication", "paper", "journal", "project"]):
                 if "research" in doc_name:
                     combined_scores[i] *= 2.0
+            elif any(kw in query_lower for kw in ["industry", "visit", "internship", "placement"]):
+                if any(kw in doc_name for kw in ["industry", "visit", "placement", "internship"]):
+                    combined_scores[i] *= 2.0
+            elif any(kw in query_lower for kw in ["event", "hackathon", "workshop", "seminar"]):
+                if any(kw in doc_name for kw in ["event", "hackathon", "workshop", "activity"]):
+                    combined_scores[i] *= 2.0
+            elif any(kw in query_lower for kw in ["mou", "collaboration", "memorandum"]):
+                if any(kw in doc_name for kw in ["mou", "collaboration"]):
+                    combined_scores[i] *= 2.0
             else:
                 if any(kw in doc_name for kw in ["department", "vision", "mission", "aiml"]):
                     combined_scores[i] *= 1.5
@@ -155,23 +221,30 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
 
 def retrieve_documents(query: str, top_k: int = 10) -> list:
     try:
-        # ── Check Cache ───────────────────────────────────
+        # ── Check Cache with ORIGINAL query ───────────────
         cache_key = get_cache_key(query)
         if cache_key in _query_cache:
             print(f"[Cache HIT] Query: {query[:50]}")
             return _query_cache[cache_key]
 
-        query_lower = query.lower()
+        # ── Expand Query for better retrieval ─────────────
+        expanded_query = expand_query(query)
+
+        # ── Use expanded query for search ──────────────────
+        query_lower = expanded_query.lower()
 
         # ── Dynamic top_k ─────────────────────────────────
         if any(kw in query_lower for kw in ["faculty", "professor", "staff", "hod", "head of department", "lecturer", "members", "who are", "list all"]):
             top_k = 20
         elif any(kw in query_lower for kw in ["research", "publication", "paper", "project"]):
             top_k = 15
+        elif any(kw in query_lower for kw in ["industry", "visit", "placement", "internship"]):
+            top_k = 15
         else:
             top_k = 10
 
-        results = hybrid_search(query, top_k=top_k)
+        # ── Hybrid Search with expanded query ─────────────
+        results = hybrid_search(expanded_query, top_k=top_k)
 
         if not results:
             return [Document("No relevant documents found.")]
@@ -199,7 +272,7 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         mrr = mean_reciprocal_rank(retrieved_names, unique_names)
         print(f"[Eval] Recall@{top_k}: {recall} | MRR: {mrr}")
 
-        # ── Save to Cache ──────────────────────────────────
+        # ── Save to Cache with ORIGINAL query key ──────────
         _query_cache[cache_key] = final_docs
         print(f"[Cache SET] Query cached: {query[:50]}")
 
