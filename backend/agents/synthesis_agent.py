@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import requests
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -57,7 +58,6 @@ def format_sql_result(query, result):
     if not result:
         return "No records found.", 0.0
 
-    # ✅ Increased from 20 to 50 rows
     display_result = result[:50]
     result_str = ""
     for row in display_result:
@@ -89,28 +89,47 @@ Question: {query}
 
 Answer:"""
 
-    try:
-        response = requests.post(
-            "https://api.together.xyz/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {TOGETHER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": SQL_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 2000,  # ✅ increased from 800
-                "temperature": 0.1
-            },
-            timeout=120  # ✅ increased from 45
-        )
-        data = response.json()
-        answer = data["choices"][0]["message"]["content"]
-        grounding = round(min(1.0, len(result) / 10), 2) if result else 0.0
-        return answer, grounding
-    except Exception as err:
-        print(f"TOGETHER ERROR: {err}")
-        return fallback_sql_format(query, result), 0.5
+    # ✅ Retry up to 3 times
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                "https://api.together.xyz/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {TOGETHER_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": SQL_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 2000,
+                    "temperature": 0.1
+                },
+                timeout=120
+            )
+            data = response.json()
+
+            # ✅ Check if choices exists
+            if "choices" not in data:
+                print(f"[SQL Together AI] No choices (attempt {attempt+1}): {data}")
+                if attempt < 2:
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"No choices after 3 attempts: {data}")
+
+            answer = data["choices"][0]["message"]["content"]
+            grounding = round(min(1.0, len(result) / 10), 2) if result else 0.0
+            return answer, grounding
+
+        except Exception as err:
+            print(f"TOGETHER ERROR SQL (attempt {attempt+1}): {err}")
+            if attempt < 2:
+                time.sleep(2)
+                continue
+
+    # ✅ Final fallback
+    print("[SQL Fallback] Returning formatted table")
+    return fallback_sql_format(query, result), 0.5
 
 
 def format_rag_result(query, context):
@@ -120,7 +139,7 @@ def format_rag_result(query, context):
     context_str = re.sub(r"\n{3,}", "\n\n", context_str)
     context_str = re.sub(r"\s{3,}", " ", context_str)
     context_str = context_str.strip()
-    context_str = context_str[:20000]  # ✅ increased from 12000
+    context_str = context_str[:20000]
 
     prompt = f"""You are CORTEX, an AI assistant for the AIML department at DSCE Bengaluru.
 Answer strictly based ONLY on the provided context. Follow these rules:
@@ -140,28 +159,48 @@ Question: {query}
 
 Answer:"""
 
-    try:
-        response = requests.post(
-            "https://api.together.xyz/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {TOGETHER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": RAG_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 4000,  # ✅ increased from 2000
-                "temperature": 0.1
-            },
-            timeout=120  # ✅ increased from 55
-        )
-        data = response.json()
-        answer = data["choices"][0]["message"]["content"]
-        grounding_score = compute_grounding_score(query, answer, context_str)
-        return answer, grounding_score
-    except Exception as err:
-        print(f"TOGETHER ERROR: {err}")
-        return f"Together AI failed: {str(err)}", 0.0
+    # ✅ Retry up to 3 times
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                "https://api.together.xyz/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {TOGETHER_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": RAG_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 4000,
+                    "temperature": 0.1
+                },
+                timeout=120
+            )
+            data = response.json()
+
+            # ✅ Check if choices exists
+            if "choices" not in data:
+                print(f"[RAG Together AI] No choices (attempt {attempt+1}): {data}")
+                if attempt < 2:
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"No choices after 3 attempts: {data}")
+
+            answer = data["choices"][0]["message"]["content"]
+            grounding_score = compute_grounding_score(query, answer, context_str)
+            return answer, grounding_score
+
+        except Exception as err:
+            print(f"TOGETHER ERROR RAG (attempt {attempt+1}): {err}")
+            if attempt < 2:
+                time.sleep(2)
+                continue
+
+    # ✅ Final fallback — return context directly
+    print("[RAG Fallback] Returning raw context")
+    fallback = f"Based on available information from our documents:\n\n{context_str[:3000]}"
+    return fallback, 0.3
 
 
 def format_response(query, result):
