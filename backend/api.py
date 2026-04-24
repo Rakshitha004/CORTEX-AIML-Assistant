@@ -642,6 +642,72 @@ async def query_with_pdf(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+class TranslateRequest(BaseModel):
+    text: str
+    target_language: str
+
+@app.post("/translate")
+async def translate_text(request: TranslateRequest, current_user=Depends(get_current_user)):
+    try:
+        from sarvamai import SarvamAI
+        import base64
+        import io
+
+        client = SarvamAI(api_subscription_key=os.getenv("SARVAM_API_KEY", ""))
+
+        # Clean markdown
+        clean = re.sub(r'[#*`|]', '', request.text)
+        clean = re.sub(r'\n{3,}', '\n\n', clean).strip()
+        clean = clean[:2000]
+
+        # Step 1: Translate
+        if request.target_language != "en-IN":
+            translate_response = client.text.translate(
+                input=clean,
+                source_language_code="en-IN",
+                target_language_code=request.target_language,
+                model="sarvam-translate:v1"
+            )
+            translated = translate_response.translated_text
+        else:
+            translated = clean
+
+        # Step 2: Text to Speech
+        speakers = {
+            "kn-IN": "shruti",
+            "hi-IN": "ritu",
+            "te-IN": "kavitha",
+            "ta-IN": "priya",
+            "ml-IN": "roopa",
+            "en-IN": "priya"
+        }
+        speaker = speakers.get(request.target_language, "priya")
+
+        tts_response = client.text_to_speech.convert(
+            text=translated[:500],
+            target_language_code=request.target_language,
+            model="bulbul:v3",
+            speaker=speaker
+        )
+
+        # Convert to base64
+        audio_buffer = io.BytesIO()
+        from sarvamai.play import save
+        save(tts_response, audio_buffer)
+        audio_base64 = base64.b64encode(
+            audio_buffer.getvalue()
+        ).decode('utf-8')
+
+        return {
+            "translated_text": translated,
+            "audio_base64": audio_base64
+        }
+
+    except Exception as e:
+        print(f"Translation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
     
 @app.post("/index-documents")
 def index_documents(current_user=Depends(get_current_user)):

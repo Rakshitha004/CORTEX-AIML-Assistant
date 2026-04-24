@@ -60,6 +60,60 @@ const ChatSidebar = ({ isOpen, conversations, activeId, onSelect, onNew, onDelet
 
 /* ── Message Bubble ── */
 const Bubble = ({ text, isUser, fileName }) => {
+  const [translatedText, setTranslatedText] = useState(null);
+  const [translating, setTranslating] = useState(false);
+  const [selectedLang, setSelectedLang] = useState(null);
+  const [audioBase64, setAudioBase64] = useState(null);
+
+  const LANGUAGES = [
+    { code: 'kn-IN', label: 'ಕನ್ನಡ', name: 'Kannada' },
+    { code: 'hi-IN', label: 'हिंदी', name: 'Hindi' },
+    { code: 'te-IN', label: 'తెలుగు', name: 'Telugu' },
+    { code: 'ta-IN', label: 'தமிழ்', name: 'Tamil' },
+    { code: 'ml-IN', label: 'മലയാളം', name: 'Malayalam' },
+  ];
+
+  const handleTranslate = async (langCode) => {
+    if (selectedLang === langCode) {
+      setTranslatedText(null);
+      setSelectedLang(null);
+      setAudioBase64(null);
+      return;
+    }
+    setTranslating(true);
+    setSelectedLang(langCode);
+    try {
+      const response = await fetch(`${API_URL}/translate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('cortex_token')}`
+        },
+        body: JSON.stringify({
+          text: text,
+          target_language: langCode
+        })
+      });
+      const data = await response.json();
+      if (data.translated_text) {
+        setTranslatedText(data.translated_text);
+        setAudioBase64(data.audio_base64);
+      }
+    } catch (e) {
+      console.error('Translation failed:', e);
+      setTranslatedText(null);
+      setSelectedLang(null);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const handleSpeak = () => {
+    if (!audioBase64) return;
+    const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
+    audio.play();
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
       data-testid={isUser ? 'user-message' : 'ai-message'}
@@ -99,6 +153,51 @@ const Bubble = ({ text, isUser, fileName }) => {
             }}>
               {text}
             </Markdown>
+
+            {/* ✅ Translation result */}
+            {translatedText && (
+              <div className="mt-3 pt-3 border-t border-white/10">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-cyan-400">
+                    🌐 {LANGUAGES.find(l => l.code === selectedLang)?.name}
+                  </span>
+                  {audioBase64 && (
+                    <button
+                      onClick={handleSpeak}
+                      className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-cyan-400/40 text-cyan-400 hover:bg-cyan-400/10 transition-all"
+                    >
+                      🔊 Speak
+                    </button>
+                  )}
+                </div>
+                <p className="text-white/80 text-sm leading-relaxed">{translatedText}</p>
+              </div>
+            )}
+
+            {/* ✅ Translating indicator */}
+            {translating && (
+              <div className="mt-2 flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                <span className="text-xs text-cyan-400">Translating...</span>
+              </div>
+            )}
+
+            {/* ✅ Language buttons */}
+            <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+              {LANGUAGES.map((lang) => (
+                <button
+                  key={lang.code}
+                  onClick={() => handleTranslate(lang.code)}
+                  className={`px-2 py-1 rounded-full text-xs border transition-all ${
+                    selectedLang === lang.code
+                      ? 'border-cyan-400 text-cyan-400 bg-cyan-400/10'
+                      : 'border-white/10 text-white/40 hover:text-white hover:border-white/30'
+                  }`}
+                >
+                  {lang.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
