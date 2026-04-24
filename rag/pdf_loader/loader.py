@@ -6,14 +6,15 @@ import re
 import base64
 import requests
 import time
+import zipfile
+import tempfile
 from typing import List, Dict, Any
 from pathlib import Path
 from config.settings import PDF_DIR
 from utils.logger import logger
 
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
-FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "")
-VISION_MODEL = "accounts/fireworks/models/llama4-scout-instruct-basic"
+SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 
 try:
     from PyPDF2 import PdfReader
@@ -69,12 +70,9 @@ def extract_tables_with_pdfplumber(pdf_path: str) -> str:
         with pdfplumber.open(pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages):
                 try:
-                    # Extract normal text
                     text = page.extract_text()
                     if text:
                         full_text.append(text)
-
-                    # Extract tables properly
                     tables = page.extract_tables()
                     for table in tables:
                         if table:
@@ -89,119 +87,66 @@ def extract_tables_with_pdfplumber(pdf_path: str) -> str:
                 except Exception as page_err:
                     logger.warning(f"Page {page_num} extraction failed: {page_err}")
                     continue
-
         return clean_text("\n".join(full_text))
     except Exception as e:
         logger.warning(f"pdfplumber table extraction failed: {e}")
         return ""
 
 
-def extract_with_vision_ai(pdf_path: str) -> str:
-    """Use Fireworks AI Vision model to read scanned PDF pages"""
-    if not PDFIUM_AVAILABLE:
-        logger.warning("pypdfium2 not available for vision extraction")
-        return ""
-
-    if not FIREWORKS_API_KEY:
-        logger.warning("No Fireworks API key for vision extraction")
+def extract_with_sarvam_vision(pdf_path: str) -> str:
+    """Use Sarvam Vision API for scanned PDFs"""
+    if not SARVAM_API_KEY:
+        logger.warning("No Sarvam API key for vision extraction")
         return ""
 
     try:
-        import pypdfium2 as pdfium
-        from PIL import Image
-        import io
+        from sarvamai import SarvamAI
+        client = SarvamAI(api_subscription_key=SARVAM_API_KEY)
 
-        pdf = pdfium.PdfDocument(pdf_path)
-        all_text = []
+        print(f"[Sarvam Vision] Processing: {Path(pdf_path).name}")
 
-        # Process max 10 pages
-        max_pages = min(len(pdf), 10)
+        # Create job
+        job = client.document_intelligence.create_job(
+            language="en-IN",
+            output_format="md"
+        )
+        print(f"[Sarvam Vision] Job created: {job.job_id}")
 
-        for page_num in range(max_pages):
-            # Retry each page up to 3 times
-            for attempt in range(3):
-                try:
-                    page = pdf[page_num]
+        # Upload PDF directly
+        job.upload_file(pdf_path)
+        print(f"[Sarvam Vision] File uploaded")
 
-                    # Render page to image
-                    bitmap = page.render(scale=2)
-                    pil_image = bitmap.to_pil()
+        # Start processing
+        job.start()
+        print(f"[Sarvam Vision] Processing started...")
 
-                    # Convert to base64
-                    buffer = io.BytesIO()
-                    pil_image.save(buffer, format="PNG")
-                    image_base64 = base64.b64encode(
-                        buffer.getvalue()
-                    ).decode("utf-8")
+        # Wait for completion
+        status = job.wait_until_complete()
+        print(f"[Sarvam Vision] Status: {status.job_state}")
 
-                    # ✅ Send to Fireworks AI Vision
-                    response = requests.post(
-                        "https://api.fireworks.ai/inference/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {FIREWORKS_API_KEY}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": VISION_MODEL,
-                            "messages": [
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "image_url",
-                                            "image_url": {
-                                                "url": f"data:image/png;base64,{image_base64}"
-                                            }
-                                        },
-                                        {
-                                            "type": "text",
-                                            "text": """Extract ALL text from this page including:
-1. All regular text paragraphs
-2. All table contents with proper row/column structure
-3. All headings and subheadings
-4. Any names, numbers, dates
+        # Download output to temp file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = os.path.join(tmpdir, "output.zip")
+            job.download_output(zip_path)
 
-Format tables as: Column1 | Column2 | Column3
-Extract everything exactly as shown, do not summarize."""
-                                        }
-                                    ]
-                                }
-                            ],
-                            "max_tokens": 2000,
-                            "temperature": 0
-                        },
-                        timeout=60
-                    )
+            # Extract markdown from zip
+            extracted_text = []
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                for filename in z.namelist():
+                    if filename.endswith('.md'):
+                        with z.open(filename) as f:
+                            content = f.read().decode('utf-8')
+                            extracted_text.append(content)
 
-                    data = response.json()
+            if extracted_text:
+                full_text = "\n\n".join(extracted_text)
+                print(f"[Sarvam Vision] ✅ Extracted {len(full_text)} chars")
+                return clean_text(full_text)
 
-                    # Check if choices exists
-                    if "choices" not in data:
-                        print(f"[Vision AI] No choices (attempt {attempt+1}): {data}")
-                        if attempt < 2:
-                            time.sleep(2)
-                            continue
-                        else:
-                            raise Exception(f"No choices after 3 attempts")
-
-                    page_text = data["choices"][0]["message"]["content"]
-                    all_text.append(f"--- Page {page_num + 1} ---\n{page_text}")
-                    print(f"[Vision AI] ✅ Page {page_num + 1}/{max_pages} extracted")
-                    break  # Success
-
-                except Exception as e:
-                    logger.warning(
-                        f"Vision page {page_num} attempt {attempt+1} failed: {e}"
-                    )
-                    if attempt < 2:
-                        time.sleep(2)
-                        continue
-
-        pdf.close()
-        return "\n\n".join(all_text) if all_text else ""
+        return ""
 
     except Exception as e:
-        logger.warning(f"Vision AI extraction failed: {e}")
+        logger.warning(f"Sarvam Vision failed: {e}")
         return ""
 
 
@@ -268,16 +213,15 @@ class PDFLoader:
                 logger.warning(f"PyPDF2 failed: {e}")
                 full_text = ""
 
-        # ── Step 3: Fireworks Vision AI fallback ──────────
+        # ── Step 3: Sarvam Vision fallback ────────────────
         if not is_text_quality_good(full_text):
-            print(f"[Loader] 👁️ Vision AI: {pdf_file.name}")
-            full_text = extract_with_vision_ai(pdf_path)
+            print(f"[Loader] 👁️ Sarvam Vision: {pdf_file.name}")
+            full_text = extract_with_sarvam_vision(pdf_path)
             if is_text_quality_good(full_text):
-                print(f"[Loader] ✅ Vision AI: {pdf_file.name}")
+                print(f"[Loader] ✅ Sarvam Vision: {pdf_file.name}")
             else:
                 print(f"[Loader] ❌ All methods failed: {pdf_file.name}")
 
-        # Get page count if not set
         if num_pages == 0:
             try:
                 with pdfplumber.open(pdf_path) as pdf:

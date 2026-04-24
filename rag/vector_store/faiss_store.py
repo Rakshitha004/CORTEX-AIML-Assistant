@@ -68,20 +68,17 @@ class FAISSVectorStore:
                 batch_ids = all_ids[i:i + batch_size]
                 fetch_result = self._index.fetch(ids=batch_ids)
 
-                # Handle both object and dict response from Pinecone SDK
                 if hasattr(fetch_result, 'vectors'):
                     vectors = fetch_result.vectors or {}
                 else:
                     vectors = fetch_result.get("vectors", {})
 
                 for vid, vdata in vectors.items():
-                    # Handle both object and dict metadata
                     if hasattr(vdata, 'metadata'):
                         meta = vdata.metadata or {}
                     else:
                         meta = vdata.get("metadata", {})
 
-                    # Handle both object and dict meta fields
                     if hasattr(meta, 'get'):
                         content = meta.get("content", "")
                         doc_name = meta.get("doc_name", "")
@@ -124,7 +121,6 @@ class FAISSVectorStore:
                 include_metadata=True
             )
 
-            # Handle both object and dict response
             if hasattr(results, 'matches'):
                 matches = results.matches or []
             else:
@@ -210,18 +206,23 @@ class FAISSVectorStore:
                     continue
 
                 vid = meta.get("id", f"vec_{len(self.metadata) + i}")
+
+                # ✅ FIX: Truncate content to avoid Pinecone 40960 byte limit
+                full_content = meta.get("content", "")
+                pinecone_content = full_content[:500]  # Max 500 chars for Pinecone
+
                 vectors.append({
                     "id": str(vid),
                     "values": emb.tolist(),
                     "metadata": {
-                        "content": meta.get("content", ""),
+                        "content": pinecone_content,  # Truncated for Pinecone
                         "doc_name": meta.get("doc_name", ""),
                         "length": meta.get("length", 0),
                     }
                 })
                 self.metadata.append({
                     "id": str(vid),
-                    "content": meta.get("content", ""),
+                    "content": full_content,  # Full content kept in memory
                     "doc_name": meta.get("doc_name", ""),
                     "length": meta.get("length", 0),
                 })

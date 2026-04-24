@@ -88,3 +88,4 @@ PyPDF2
 python-multipart
 together
 pinecone
+sarvamai

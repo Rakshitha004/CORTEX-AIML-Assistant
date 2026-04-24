@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 import requests
 from typing import List, Union
@@ -17,15 +18,13 @@ class EmbeddingGenerator:
         self.embedding_dim = TOGETHER_EMBEDDING_DIM
         logger.info(f"EmbeddingGenerator initialized with Together AI model: {self.model_name}")
 
-    def encode(self, texts):
-        try:
-            if isinstance(texts, str):
-                texts = [texts]
-            all_embeddings = []
-            batch_size = 10
-            for i in range(0, len(texts), batch_size):
-                batch = texts[i:i + batch_size]
-                truncated_batch = [text[:1200] for text in batch]
+    def encode_batch_with_retry(self, batch: list, max_retries: int = 5) -> list:
+        """Encode a single batch with retry logic"""
+        # ✅ Fixed: 500 chars ≈ 125-250 tokens, always under 512 token limit
+        truncated_batch = [text[:500] for text in batch]
+        
+        for attempt in range(max_retries):
+            try:
                 response = requests.post(
                     "https://api.together.xyz/v1/embeddings",
                     headers={
@@ -39,15 +38,53 @@ class EmbeddingGenerator:
                     timeout=60
                 )
                 result = response.json()
+                
                 if "data" not in result:
-                    logger.error(f"Together AI embedding error: {result}")
-                    for _ in batch:
-                        all_embeddings.append(np.zeros(TOGETHER_EMBEDDING_DIM))
-                    continue
+                    logger.error(f"Together AI embedding error (attempt {attempt+1}): {result}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.info(f"Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                    return [np.zeros(TOGETHER_EMBEDDING_DIM) for _ in batch]
+                
+                embeddings = []
                 for item in result["data"]:
-                    all_embeddings.append(np.array(item["embedding"]))
+                    embeddings.append(np.array(item["embedding"]))
+                return embeddings
+                
+            except Exception as e:
+                logger.error(f"Embedding error (attempt {attempt+1}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    continue
+                return [np.zeros(TOGETHER_EMBEDDING_DIM) for _ in batch]
+        
+        return [np.zeros(TOGETHER_EMBEDDING_DIM) for _ in batch]
+
+    def encode(self, texts):
+        try:
+            if isinstance(texts, str):
+                texts = [texts]
+            
+            all_embeddings = []
+            batch_size = 5
+
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i:i + batch_size]
+                print(f"[Embeddings] Batch {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
+                
+                batch_embeddings = self.encode_batch_with_retry(batch)
+                all_embeddings.extend(batch_embeddings)
+                
+                if i + batch_size < len(texts):
+                    time.sleep(0.5)
+
             embeddings = np.array(all_embeddings)
             return embeddings
+            
         except Exception as e:
             logger.error(f"Error generating embeddings: {e}")
             return np.zeros((len(texts) if isinstance(texts, list) else 1, TOGETHER_EMBEDDING_DIM))
