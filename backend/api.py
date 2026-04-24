@@ -647,12 +647,19 @@ class TranslateRequest(BaseModel):
     text: str
     target_language: str
 
+class TranslateRequest(BaseModel):
+    text: str
+    target_language: str
+
 @app.post("/translate")
 async def translate_text(request: TranslateRequest, current_user=Depends(get_current_user)):
     try:
         from sarvamai import SarvamAI
+        from sarvamai.play import save
         import base64
         import io
+        import tempfile
+        import os as _os
 
         client = SarvamAI(api_subscription_key=os.getenv("SARVAM_API_KEY", ""))
 
@@ -691,13 +698,16 @@ async def translate_text(request: TranslateRequest, current_user=Depends(get_cur
             speaker=speaker
         )
 
-        # Convert to base64
-        audio_buffer = io.BytesIO()
-        from sarvamai.play import save
-        save(tts_response, audio_buffer)
-        audio_base64 = base64.b64encode(
-            audio_buffer.getvalue()
-        ).decode('utf-8')
+        # Step 3: Save to temp file and convert to base64
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+            tmp_path = tmp.name
+
+        save(tts_response, tmp_path)
+
+        with open(tmp_path, 'rb') as f:
+            audio_base64 = base64.b64encode(f.read()).decode('utf-8')
+
+        _os.unlink(tmp_path)
 
         return {
             "translated_text": translated,
