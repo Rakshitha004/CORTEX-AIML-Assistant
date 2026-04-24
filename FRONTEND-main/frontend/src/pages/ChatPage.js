@@ -71,6 +71,7 @@ const Bubble = ({ text, isUser, fileName }) => {
     { code: 'te-IN', label: 'తెలుగు', name: 'Telugu' },
     { code: 'ta-IN', label: 'தமிழ்', name: 'Tamil' },
     { code: 'ml-IN', label: 'മലയാളം', name: 'Malayalam' },
+     { code: 'en-IN', label: 'English', name: 'English' },
   ];
 
   const handleTranslate = async (langCode) => {
@@ -108,11 +109,23 @@ const Bubble = ({ text, isUser, fileName }) => {
     }
   };
 
-  const handleSpeak = () => {
+  const [audioPlaying, setAudioPlaying] = useState(false);
+const audioRef = useRef(null);
+
+const handleSpeak = () => {
     if (!audioBase64) return;
+    if (audioPlaying && audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        setAudioPlaying(false);
+        return;
+    }
     const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
+    audioRef.current = audio;
+    audio.onended = () => setAudioPlaying(false);
     audio.play();
-  };
+    setAudioPlaying(true);
+};
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
@@ -163,11 +176,11 @@ const Bubble = ({ text, isUser, fileName }) => {
                   </span>
                   {audioBase64 && (
                     <button
-                      onClick={handleSpeak}
+                    onClick={handleSpeak}
                       className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-cyan-400/40 text-cyan-400 hover:bg-cyan-400/10 transition-all"
                     >
-                      🔊 Speak
-                    </button>
+                    {audioPlaying ? '⏹ Stop' : '🔊 Speak'}
+                      </button>
                   )}
                 </div>
                 <p className="text-white/80 text-sm leading-relaxed">{translatedText}</p>
