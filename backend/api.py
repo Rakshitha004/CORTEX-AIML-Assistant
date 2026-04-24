@@ -9,6 +9,7 @@ import tempfile
 import time
 import csv
 from pathlib import Path
+import re 
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
