@@ -16,7 +16,7 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
@@ -31,6 +31,8 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 from backend.graph.workflow import graph
+from fastapi.responses import StreamingResponse
+import json
 
 # ── Force all env vars into os.environ for RAG modules ──
 import os
@@ -299,7 +301,7 @@ def clear_chat_history(current_user=Depends(get_current_user)):
 
 # ─── Query ────────────────────────────────────────────────────────────────────
 @app.post("/query")
-def run_query(request: QueryRequest, current_user=Depends(get_current_user)):
+async def run_query(request: QueryRequest, current_user=Depends(get_current_user)):
     query_lower = request.query.lower()
     if current_user["role"] == "Student":
         for keyword in STUDENT_BLOCKED_KEYWORDS:
@@ -311,17 +313,9 @@ def run_query(request: QueryRequest, current_user=Depends(get_current_user)):
     result = graph.invoke(state)
     intent = result.get("intent", "unknown")
 
-    # NEW - intent + keyword based (accurate)
     q_lower = request.query.lower()
-    complex_keywords = [
-    "compare", "difference", "vs", "versus", "explain", "why", "how does",
-    "analyze", "analyse", "list all", "all students", "every", "across all",
-    "research", "publication", "project", "collaboration", "multiple"
-]
-    simple_keywords = [
-    "who is", "what is", "hod", "head", "name", "vision", "mission",
-    "topper", "highest cgpa", "how many"
-]
+    complex_keywords = ["compare", "difference", "vs", "versus", "explain", "why", "how does", "analyze", "analyse", "list all", "all students", "every", "across all", "research", "publication", "project", "collaboration", "multiple"]
+    simple_keywords = ["who is", "what is", "hod", "head", "name", "vision", "mission", "topper", "highest cgpa", "how many"]
 
     if any(k in q_lower for k in complex_keywords):
         complexity = "Complex"
@@ -354,11 +348,25 @@ def run_query(request: QueryRequest, current_user=Depends(get_current_user)):
     except Exception as e:
         print(f"[Metrics] MongoDB insert failed: {e}")
 
+    # ── Build response payload ──
     if intent == "knowledge_query":
-        return {"query": result.get("query"), "intent": intent, "answer": result.get("answer"), "audit": result.get("audit")}
+        payload = {"query": result.get("query"), "intent": intent, "answer": result.get("answer"), "audit": result.get("audit")}
     else:
-        return {"query": result.get("query"), "intent": intent, "table": result.get("table"), "columns": result.get("columns"), "sql": result.get("sql"), "validated_sql": result.get("validated_sql"), "result": result.get("result"), "answer": result.get("answer"), "audit": result.get("audit")}
+        payload = {"query": result.get("query"), "intent": intent, "table": result.get("table"), "columns": result.get("columns"), "sql": result.get("sql"), "validated_sql": result.get("validated_sql"), "result": result.get("result"), "answer": result.get("answer"), "audit": result.get("audit")}
 
+    # ── Stream the answer word by word ──
+    answer = result.get("answer", "No response received.")
+
+    async def stream_response():
+        words = answer.split(" ")
+        for i, word in enumerate(words):
+            chunk = word if i == 0 else " " + word
+            yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            await asyncio.sleep(0.02)
+        # Send final payload at the end
+        yield f"data: {json.dumps({'done': True, 'full': payload})}\n\n"
+
+    return StreamingResponse(stream_response(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 # ─── Admin Metrics ────────────────────────────────────────────────────────────
 @app.get("/admin/metrics")
 def get_metrics(current_user=Depends(get_current_user)):

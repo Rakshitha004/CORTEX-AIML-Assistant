@@ -71,7 +71,7 @@ const Bubble = ({ text, isUser, fileName }) => {
     { code: 'te-IN', label: 'తెలుగు', name: 'Telugu' },
     { code: 'ta-IN', label: 'தமிழ்', name: 'Tamil' },
     { code: 'ml-IN', label: 'മലയാളം', name: 'Malayalam' },
-     { code: 'en-IN', label: 'English', name: 'English' },
+    { code: 'en-IN', label: 'English', name: 'English' },
   ];
 
   const handleTranslate = async (langCode) => {
@@ -110,22 +110,22 @@ const Bubble = ({ text, isUser, fileName }) => {
   };
 
   const [audioPlaying, setAudioPlaying] = useState(false);
-const audioRef = useRef(null);
+  const audioRef = useRef(null);
 
-const handleSpeak = () => {
+  const handleSpeak = () => {
     if (!audioBase64) return;
     if (audioPlaying && audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-        setAudioPlaying(false);
-        return;
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setAudioPlaying(false);
+      return;
     }
     const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
     audioRef.current = audio;
     audio.onended = () => setAudioPlaying(false);
     audio.play();
     setAudioPlaying(true);
-};
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
@@ -167,7 +167,7 @@ const handleSpeak = () => {
               {text}
             </Markdown>
 
-            {/* ✅ Translation result */}
+            {/* Translation result */}
             {translatedText && (
               <div className="mt-3 pt-3 border-t border-white/10">
                 <div className="flex items-center justify-between mb-2">
@@ -176,18 +176,18 @@ const handleSpeak = () => {
                   </span>
                   {audioBase64 && (
                     <button
-                    onClick={handleSpeak}
+                      onClick={handleSpeak}
                       className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-cyan-400/40 text-cyan-400 hover:bg-cyan-400/10 transition-all"
                     >
-                    {audioPlaying ? '⏹ Stop' : '🔊 Speak'}
-                      </button>
+                      {audioPlaying ? '⏹ Stop' : '🔊 Speak'}
+                    </button>
                   )}
                 </div>
                 <p className="text-white/80 text-sm leading-relaxed">{translatedText}</p>
               </div>
             )}
 
-            {/* ✅ Translating indicator */}
+            {/* Translating indicator */}
             {translating && (
               <div className="mt-2 flex items-center gap-2">
                 <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
@@ -195,7 +195,7 @@ const handleSpeak = () => {
               </div>
             )}
 
-            {/* ✅ Language buttons */}
+            {/* Language buttons */}
             <div className="mt-3 flex items-center gap-1.5 flex-wrap">
               {LANGUAGES.map((lang) => (
                 <button
@@ -400,6 +400,7 @@ export const ChatLayout = () => {
   });
 
   const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false); // ── NEW: tracks streaming state
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const pdfContextRef = useRef({});
   const containerRef = useRef(null);
@@ -483,6 +484,7 @@ export const ChatLayout = () => {
       let answer;
 
       if (pdfToUse) {
+        // ── PDF path: unchanged, no streaming ──
         const formData = new FormData();
         formData.append('file', pdfToUse);
         formData.append('query', text);
@@ -495,27 +497,90 @@ export const ChatLayout = () => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Query failed');
         answer = data.answer || 'No response received.';
+
+        const aiMsg = { id: (Date.now() + 1).toString(), text: answer, isUser: false };
+        setConvos(prev => prev.map(c => {
+          if (c.id !== currentSessionId) return c;
+          return { ...c, lastMessage: cleanPreviewText(answer), messages: [...c.messages, aiMsg] };
+        }));
+
       } else {
+        // ── STREAMING path for normal queries ──
         const response = await fetch(`${API_URL}/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ query: text, session_id: currentSessionId }),
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Query failed');
-        answer = data.answer || 'No response received.';
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.detail || 'Query failed');
+        }
+
+        // Add empty AI message immediately so user sees the bubble appear
+        const streamMsgId = (Date.now() + 1).toString();
+        setConvos(prev => prev.map(c => {
+          if (c.id !== currentSessionId) return c;
+          return { ...c, messages: [...c.messages, { id: streamMsgId, text: '', isUser: false }] };
+        }));
+
+        // Hide loading dots — words are appearing instead
+        setLoading(false);
+        setStreaming(true);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let streamedText = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const raw = decoder.decode(value, { stream: true });
+          const lines = raw.split('\n').filter(l => l.startsWith('data: '));
+
+          for (const line of lines) {
+            try {
+              const parsed = JSON.parse(line.slice(6)); // strip "data: "
+
+              if (parsed.chunk !== undefined) {
+                // ── Append each word to the message live ──
+                streamedText += parsed.chunk;
+                setConvos(prev => prev.map(c => {
+                  if (c.id !== currentSessionId) return c;
+                  return {
+                    ...c,
+                    messages: c.messages.map(m =>
+                      m.id === streamMsgId ? { ...m, text: streamedText } : m
+                    )
+                  };
+                }));
+              }
+
+              if (parsed.done) {
+                // ── Stream finished — update sidebar preview ──
+                answer = streamedText;
+                setConvos(prev => prev.map(c => {
+                  if (c.id !== currentSessionId) return c;
+                  return { ...c, lastMessage: cleanPreviewText(streamedText) };
+                }));
+              }
+            } catch {
+              // ignore malformed chunks
+            }
+          }
+        }
+
+        answer = streamedText || 'No response received.';
+        setStreaming(false);
       }
 
-      // ✅ FIX: Clean markdown from sidebar preview
-      const aiMsg = { id: (Date.now() + 1).toString(), text: answer, isUser: false };
-      setConvos(prev => prev.map(c => {
-        if (c.id !== currentSessionId) return c;
-        return { ...c, lastMessage: cleanPreviewText(answer), messages: [...c.messages, aiMsg] };
-      }));
       addNotification({ title: 'Query Complete', message: `Response ready for: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`, type: 'chat' });
+
     } catch (error) {
       const errMsg = { id: (Date.now() + 1).toString(), text: `⚠️ ${error.message}`, isUser: false };
       setConvos(prev => prev.map(c => c.id !== currentSessionId ? c : { ...c, messages: [...c.messages, errMsg] }));
+      setStreaming(false);
     } finally {
       setLoading(false);
     }
@@ -571,7 +636,9 @@ export const ChatLayout = () => {
           <div ref={containerRef} data-testid="messages-container" className="flex-1 overflow-y-auto px-6 py-6">
             <div className="max-w-4xl mx-auto">
               {messages.map((m) => <Bubble key={m.id} text={m.text} isUser={m.isUser} fileName={m.fileName} />)}
-              {loading && (
+
+              {/* Show loading dots only before streaming starts */}
+              {loading && !streaming && (
                 <div className="flex items-start space-x-3 mb-5" data-testid="typing-indicator">
                   <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
                     <Loader2 className="w-4 h-4 text-white animate-spin" />
@@ -587,7 +654,7 @@ export const ChatLayout = () => {
               )}
             </div>
           </div>
-          <ChatInput onSend={handleSend} disabled={loading} activePdfName={activePdf?.name || null} onClearPdf={handleClearPdf} />
+          <ChatInput onSend={handleSend} disabled={loading || streaming} activePdfName={activePdf?.name || null} onClearPdf={handleClearPdf} />
         </div>
       </div>
     </div>

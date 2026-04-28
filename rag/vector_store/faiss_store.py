@@ -209,7 +209,7 @@ class FAISSVectorStore:
 
                 # ✅ FIX: Truncate content to avoid Pinecone 40960 byte limit
                 full_content = meta.get("content", "")
-                pinecone_content = full_content[:2000]  # Max 2000 chars for Pinecone
+                pinecone_content = full_content[:800]  # Max 800 chars for Pinecone
 
                 vectors.append({
                     "id": str(vid),
