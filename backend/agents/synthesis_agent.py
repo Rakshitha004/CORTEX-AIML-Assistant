@@ -181,7 +181,7 @@ def format_rag_result(query, context):
 Answer strictly based ONLY on the provided context. Follow these rules:
 1. COMPLETENESS: If the question asks for a list, include EVERY item found in context.
 2. FAITHFULNESS: Never invent any name or fact not in the context.
-3. FORMAT: For faculty — numbered list with name and designation. For research — bullet points. For events — bullet points.
+3. 3. FORMAT: For faculty lists — ONLY include people with these designations: Professor, Associate Professor, Assistant Professor, Head of Department, HOD, Lecturer. EXCLUDE student names, participant names, or anyone without a faculty designation. For research — bullet points. For events — bullet points.
 4. UNKNOWN: If context does not contain the answer say exactly: 'I do not have enough information about that.'
 5. Never use placeholders like [Name]. Only real names from context.
 6. Keep response focused and clear.
