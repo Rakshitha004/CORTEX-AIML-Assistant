@@ -32,6 +32,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 from backend.graph.workflow import graph
 from fastapi.responses import StreamingResponse
+import asyncio
 import json
 
 # ── Force all env vars into os.environ for RAG modules ──
