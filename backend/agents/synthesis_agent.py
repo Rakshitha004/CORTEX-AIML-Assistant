@@ -7,8 +7,44 @@ import numpy as np
 
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
-SQL_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"
-RAG_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"
+# ── Models ──────────────────────────────────────────────────────────────────
+FAST_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo"   # Simple queries — 3-4 sec
+SQL_MODEL  = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"    # SQL formatting
+RAG_MODEL  = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"    # Complex RAG queries
+
+# ── Query complexity detector ────────────────────────────────────────────────
+COMPLEX_KEYWORDS = [
+    "compare", "difference", "vs", "versus", "explain", "why", "how does",
+    "analyze", "analyse", "list all", "all students", "every", "across all",
+    "research", "publication", "project", "collaboration", "multiple",
+    "all faculty", "all subjects", "entire", "detailed", "comprehensive"
+]
+
+SIMPLE_KEYWORDS = [
+    "who is", "what is", "hod", "head", "name", "vision", "mission",
+    "topper", "highest cgpa", "how many", "when", "where", "which year",
+    "phone", "email", "contact", "address", "designation"
+]
+
+def detect_complexity(query: str) -> str:
+    """Returns 'simple' or 'complex'"""
+    q = query.lower()
+    if any(k in q for k in COMPLEX_KEYWORDS):
+        return "complex"
+    if any(k in q for k in SIMPLE_KEYWORDS) or len(query.split()) <= 6:
+        return "simple"
+    return "simple"  # default to fast model when unsure
+
+
+def pick_rag_model(query: str) -> tuple:
+    """Returns (model, max_tokens) based on query complexity"""
+    complexity = detect_complexity(query)
+    if complexity == "simple":
+        print(f"[Routing] Simple query → FAST MODEL (Llama 70B)")
+        return FAST_MODEL, 1000
+    else:
+        print(f"[Routing] Complex query → FULL MODEL (Qwen 235B)")
+        return RAG_MODEL, 4000
 
 
 def compute_grounding_score(query: str, answer: str, context: str) -> float:
@@ -89,7 +125,6 @@ Question: {query}
 
 Answer:"""
 
-    # ✅ Retry up to 3 times
     for attempt in range(3):
         try:
             response = requests.post(
@@ -108,7 +143,6 @@ Answer:"""
             )
             data = response.json()
 
-            # ✅ Check if choices exists
             if "choices" not in data:
                 print(f"[SQL Together AI] No choices (attempt {attempt+1}): {data}")
                 if attempt < 2:
@@ -127,19 +161,21 @@ Answer:"""
                 time.sleep(2)
                 continue
 
-    # ✅ Final fallback
     print("[SQL Fallback] Returning formatted table")
     return fallback_sql_format(query, result), 0.5
 
 
 def format_rag_result(query, context):
-    """Format RAG results using AI"""
+    """Format RAG results using AI — routes to fast or full model based on complexity"""
     context_str = str(context).strip()
     context_str = re.sub(r"\\n", "\n", context_str)
     context_str = re.sub(r"\n{3,}", "\n\n", context_str)
     context_str = re.sub(r"\s{3,}", " ", context_str)
     context_str = context_str.strip()
     context_str = context_str[:20000]
+
+    # ── Route to correct model based on query complexity ──
+    model, max_tokens = pick_rag_model(query)
 
     prompt = f"""You are CORTEX, an AI assistant for the AIML department at DSCE Bengaluru.
 Answer strictly based ONLY on the provided context. Follow these rules:
@@ -159,7 +195,6 @@ Question: {query}
 
 Answer:"""
 
-    # ✅ Retry up to 3 times
     for attempt in range(3):
         try:
             response = requests.post(
@@ -169,16 +204,15 @@ Answer:"""
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": RAG_MODEL,
+                    "model": model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 4000,
+                    "max_tokens": max_tokens,
                     "temperature": 0.1
                 },
                 timeout=120
             )
             data = response.json()
 
-            # ✅ Check if choices exists
             if "choices" not in data:
                 print(f"[RAG Together AI] No choices (attempt {attempt+1}): {data}")
                 if attempt < 2:
@@ -197,7 +231,6 @@ Answer:"""
                 time.sleep(2)
                 continue
 
-    # ✅ Final fallback — return context directly
     print("[RAG Fallback] Returning raw context")
     fallback = f"Based on available information from our documents:\n\n{context_str[:3000]}"
     return fallback, 0.3
