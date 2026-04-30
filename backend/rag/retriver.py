@@ -34,6 +34,58 @@ def get_cache_key(query: str) -> str:
     return hashlib.md5(query.lower().strip().encode()).hexdigest()
 
 
+# ─── HyDE — Hypothetical Document Embeddings ──────────────
+# Queries that benefit most from HyDE
+HYDE_TRIGGERS = [
+    "syllabus", "scheme", "curriculum", "subjects in", "subject code",
+    "credits", "elective", "lab subject", "passing criteria",
+    "what is", "explain", "tell me about", "describe",
+    "vision", "mission", "research areas", "industry visit",
+    "hackathon", "mou", "placement", "internship", "event"
+]
+
+def should_use_hyde(query: str) -> bool:
+    """Only use HyDE for queries that benefit from it"""
+    q = query.lower()
+    return any(kw in q for kw in HYDE_TRIGGERS)
+
+def generate_hypothetical_answer(query: str) -> str:
+    """
+    HyDE: Generate a hypothetical answer to the query.
+    Embed this instead of the raw query for better retrieval.
+    """
+    try:
+        response = requests.post(
+            "https://api.together.xyz/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {TOGETHER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",  # fast model
+                "messages": [{"role": "user", "content": f"""You are a document from AIML department at DSCE Bangalore.
+Write a SHORT hypothetical passage (3-5 sentences) that would directly answer this query.
+Write as if you are the actual document containing this information.
+Use specific AIML/DSCE terminology. Be concise.
+Do NOT say "I don't know". Always write a plausible passage.
+
+Query: {query}
+
+Hypothetical passage:"""}],
+                "max_tokens": 150,
+                "temperature": 0.3
+            },
+            timeout=15
+        )
+        hypothetical = response.json()["choices"][0]["message"]["content"].strip()
+        print(f"[HyDE] Generated hypothetical for: '{query[:50]}'")
+        print(f"[HyDE] Hypothetical: {hypothetical[:100]}...")
+        return hypothetical
+    except Exception as e:
+        print(f"[HyDE Failed] {e} — falling back to expanded query")
+        return ""  # fallback — will use expanded query instead
+
+
 # ─── Query Expansion ──────────────────────────────────────
 def expand_query(query: str) -> str:
     """Expand short/ambiguous queries for better retrieval"""
@@ -77,13 +129,12 @@ Expanded:"""}],
             timeout=15
         )
         expanded = response.json()["choices"][0]["message"]["content"].strip()
-        # Clean up any quotes
         expanded = expanded.strip('"').strip("'")
         print(f"[Query Expansion] '{query}' → '{expanded}'")
         return expanded
     except Exception as e:
         print(f"[Query Expansion Failed] {e} — using original query")
-        return query  # fallback to original
+        return query
 
 
 # ─── Recall@K Metric ──────────────────────────────────────
@@ -227,13 +278,25 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
             print(f"[Cache HIT] Query: {query[:50]}")
             return _query_cache[cache_key]
 
-        # ── Expand Query for better retrieval ─────────────
+        # ── Step 1: Expand Query ───────────────────────────
         expanded_query = expand_query(query)
-
-        # ── Use expanded query for search ──────────────────
         query_lower = expanded_query.lower()
 
-        # ── Dynamic top_k ─────────────────────────────────
+        # ── Step 2: HyDE — generate hypothetical answer ───
+        # Use HyDE for queries that benefit from richer embeddings
+        search_query = expanded_query  # default
+        if should_use_hyde(query):
+            hypothetical = generate_hypothetical_answer(query)
+            if hypothetical:
+                # Combine expanded query + hypothetical for best of both
+                search_query = expanded_query + " " + hypothetical
+                print(f"[HyDE] Using hypothetical embedding for search")
+            else:
+                print(f"[HyDE] Skipped — using expanded query")
+        else:
+            print(f"[HyDE] Not needed for this query type")
+
+        # ── Step 3: Dynamic top_k ──────────────────────────
         if any(kw in query_lower for kw in ["faculty", "professor", "staff", "hod", "head of department", "lecturer", "members", "who are", "list all"]):
             top_k = 20
         elif any(kw in query_lower for kw in ["research", "publication", "paper", "project"]):
@@ -243,8 +306,8 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         else:
             top_k = 10
 
-        # ── Hybrid Search with expanded query ─────────────
-        results = hybrid_search(expanded_query, top_k=top_k)
+        # ── Step 4: Hybrid Search with HyDE query ─────────
+        results = hybrid_search(search_query, top_k=top_k)
 
         if not results:
             return [Document("No relevant documents found.")]
