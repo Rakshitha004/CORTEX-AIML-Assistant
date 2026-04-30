@@ -35,7 +35,6 @@ def get_cache_key(query: str) -> str:
 
 
 # ─── HyDE — Hypothetical Document Embeddings ──────────────
-# Queries that benefit most from HyDE
 HYDE_TRIGGERS = [
     "syllabus", "scheme", "curriculum", "subjects in", "subject code",
     "credits", "elective", "lab subject", "passing criteria",
@@ -45,15 +44,10 @@ HYDE_TRIGGERS = [
 ]
 
 def should_use_hyde(query: str) -> bool:
-    """Only use HyDE for queries that benefit from it"""
     q = query.lower()
     return any(kw in q for kw in HYDE_TRIGGERS)
 
 def generate_hypothetical_answer(query: str) -> str:
-    """
-    HyDE: Generate a hypothetical answer to the query.
-    Embed this instead of the raw query for better retrieval.
-    """
     try:
         response = requests.post(
             "https://api.together.xyz/v1/chat/completions",
@@ -62,7 +56,7 @@ def generate_hypothetical_answer(query: str) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",  # fast model
+                "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
                 "messages": [{"role": "user", "content": f"""You are a document from AIML department at DSCE Bangalore.
 Write a SHORT hypothetical passage (3-5 sentences) that would directly answer this query.
 Write as if you are the actual document containing this information.
@@ -83,14 +77,12 @@ Hypothetical passage:"""}],
         return hypothetical
     except Exception as e:
         print(f"[HyDE Failed] {e} — falling back to expanded query")
-        return ""  # fallback — will use expanded query instead
+        return ""
 
 
 # ─── Query Expansion ──────────────────────────────────────
 def expand_query(query: str) -> str:
-    """Expand short/ambiguous queries for better retrieval"""
     try:
-        # Skip expansion for already detailed queries
         if len(query.split()) > 10:
             return query
 
@@ -110,16 +102,16 @@ Add relevant context like department name, full forms, synonyms.
 Do NOT answer the question — just expand it.
 
 Examples:
-"who is hod" → "Who is the Head of Department HOD of AIML department at DSCE Bangalore?"
-"list faculty" → "List all faculty members professors lecturers and staff of AIML department at DSCE"
-"industry visits" → "What are the industry visits company visits and industrial tours conducted by AIML department students at DSCE?"
-"research areas" → "What are the research areas publications projects and patents of AIML department faculty at DSCE Bangalore?"
-"vision" → "What is the vision and mission statement of AIML department at DSCE Bangalore?"
-"hod name" → "What is the name of Head of Department HOD of AIML department at DSCE?"
-"placement" → "What are the placement details companies and statistics for AIML department students at DSCE?"
-"events" → "What are the events workshops seminars and activities conducted by AIML department at DSCE?"
-"hackathon" → "What hackathons and competitions were organized or participated in by AIML department students?"
-"mou" → "What are the MOUs memorandum of understanding and collaborations signed by AIML department?"
+"who is hod" -> "Who is the Head of Department HOD of AIML department at DSCE Bangalore?"
+"list faculty" -> "List all faculty members professors lecturers and staff of AIML department at DSCE"
+"industry visits" -> "What are the industry visits company visits and industrial tours conducted by AIML department students at DSCE?"
+"research areas" -> "What are the research areas publications projects and patents of AIML department faculty at DSCE Bangalore?"
+"vision" -> "What is the vision and mission statement of AIML department at DSCE Bangalore?"
+"hod name" -> "What is the name of Head of Department HOD of AIML department at DSCE?"
+"placement" -> "What are the placement details companies and statistics for AIML department students at DSCE?"
+"events" -> "What are the events workshops seminars and activities conducted by AIML department at DSCE?"
+"hackathon" -> "What hackathons and competitions were organized or participated in by AIML department students?"
+"mou" -> "What are the MOUs memorandum of understanding and collaborations signed by AIML department?"
 
 Query: "{query}"
 Expanded:"""}],
@@ -130,7 +122,7 @@ Expanded:"""}],
         )
         expanded = response.json()["choices"][0]["message"]["content"].strip()
         expanded = expanded.strip('"').strip("'")
-        print(f"[Query Expansion] '{query}' → '{expanded}'")
+        print(f"[Query Expansion] '{query}' -> '{expanded}'")
         return expanded
     except Exception as e:
         print(f"[Query Expansion Failed] {e} — using original query")
@@ -218,18 +210,35 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
                     combined_scores[i] *= 2.0
                     if "faculty name" in content or "designation" in content:
                         combined_scores[i] *= 3.0
+
+            elif any(kw in query_lower for kw in ["scheme", "syllabus", "semester", "subject", "curriculum", "credits", "module", "elective"]):
+                # ── Scheme/Syllabus strong boosting ───────
+                if any(kw in doc_name for kw in ["scheme", "syllabus", "2020", "2021", "2022"]):
+                    combined_scores[i] *= 3.0
+                    # Extra boost for specific year mentioned
+                    if "2022" in query_lower and "2022" in doc_name:
+                        combined_scores[i] *= 3.0
+                    elif "2021" in query_lower and "2021" in doc_name:
+                        combined_scores[i] *= 3.0
+                    elif "2020" in query_lower and "2020" in doc_name:
+                        combined_scores[i] *= 3.0
+
             elif any(kw in query_lower for kw in ["research", "publication", "paper", "journal", "project"]):
                 if "research" in doc_name:
                     combined_scores[i] *= 2.0
+
             elif any(kw in query_lower for kw in ["industry", "visit", "internship", "placement"]):
                 if any(kw in doc_name for kw in ["industry", "visit", "placement", "internship"]):
                     combined_scores[i] *= 2.0
+
             elif any(kw in query_lower for kw in ["event", "hackathon", "workshop", "seminar"]):
                 if any(kw in doc_name for kw in ["event", "hackathon", "workshop", "activity"]):
                     combined_scores[i] *= 2.0
+
             elif any(kw in query_lower for kw in ["mou", "collaboration", "memorandum"]):
                 if any(kw in doc_name for kw in ["mou", "collaboration"]):
                     combined_scores[i] *= 2.0
+
             else:
                 if any(kw in doc_name for kw in ["department", "vision", "mission", "aiml"]):
                     combined_scores[i] *= 1.5
@@ -283,12 +292,10 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         query_lower = expanded_query.lower()
 
         # ── Step 2: HyDE — generate hypothetical answer ───
-        # Use HyDE for queries that benefit from richer embeddings
-        search_query = expanded_query  # default
+        search_query = expanded_query
         if should_use_hyde(query):
             hypothetical = generate_hypothetical_answer(query)
             if hypothetical:
-                # Combine expanded query + hypothetical for best of both
                 search_query = expanded_query + " " + hypothetical
                 print(f"[HyDE] Using hypothetical embedding for search")
             else:
@@ -299,6 +306,8 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         # ── Step 3: Dynamic top_k ──────────────────────────
         if any(kw in query_lower for kw in ["faculty", "professor", "staff", "hod", "head of department", "lecturer", "members", "who are", "list all"]):
             top_k = 20
+        elif any(kw in query_lower for kw in ["scheme", "syllabus", "curriculum", "subjects", "semester"]):
+            top_k = 15
         elif any(kw in query_lower for kw in ["research", "publication", "paper", "project"]):
             top_k = 15
         elif any(kw in query_lower for kw in ["industry", "visit", "placement", "internship"]):
