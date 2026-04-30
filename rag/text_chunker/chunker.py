@@ -21,7 +21,7 @@ SYLLABUS_KEYWORDS = [
 def is_syllabus_document(text: str, doc_name: str) -> bool:
     """Detect if this PDF is a syllabus/scheme document"""
     doc_lower = doc_name.lower()
-    text_lower = text.lower()[:2000]  # check first 2000 chars
+    text_lower = text.lower()[:2000]
 
     if any(kw in doc_lower for kw in ["scheme", "syllabus", "curriculum", "2020", "2021", "2022"]):
         return True
@@ -36,31 +36,27 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
     - Detects subject boundaries
     - Keeps subject name + code + credits + modules together
     - Never splits a subject across chunks
+    - Prepends scheme/semester info extracted from course codes
     """
     chunks = []
     safe_doc = re.sub(r'[^a-zA-Z0-9]', '_', doc_name)
     chunk_id = 0
 
     # ── Split by subject/course boundaries ───────────────
-    # Patterns that indicate start of a new subject
     subject_patterns = [
-        r'(?=(?:PCC|IPCC|BSC|PCCL|PEC|AEC|SEC|HSMC|OEC|ESC|SCR)\s+\d{2}[A-Z]{2,3}\d{2,3})',  # subject type + code
-        r'(?=(?:Course Code|Subject Code)\s*[:\|])',  # Course Code: XXX
-        r'(?=Module\s+[1-6]\s*[:\|])',  # Module 1:
-        r'(?=UNIT\s+[IVX]+\s*[:\|])',   # UNIT I:
+        r'(?=(?:PCC|IPCC|BSC|PCCL|PEC|AEC|SEC|HSMC|OEC|ESC|SCR)\s+\d{2}[A-Z]{2,3}\d{2,3})',
+        r'(?=(?:Course Code|Subject Code)\s*[:\|])',
+        r'(?=Module\s+[1-6]\s*[:\|])',
+        r'(?=UNIT\s+[IVX]+\s*[:\|])',
     ]
 
     combined_pattern = '|'.join(subject_patterns)
-
-    # Try to split by subject boundaries
     parts = re.split(combined_pattern, text)
 
     if len(parts) <= 1:
-        # No subject boundaries found — use semester boundaries
         parts = re.split(r'(?=(?:III|IV|V|VI|VII|VIII)\s+Semester)', text)
 
     if len(parts) <= 1:
-        # Fall back to page-like splits on double newlines
         parts = [p for p in re.split(r'\n{3,}', text) if p.strip()]
 
     # ── Process each part ────────────────────────────────
@@ -69,20 +65,19 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         if not part or len(part) < 50:
             continue
 
-        # Extract subject header info to prepend to every chunk
         subject_header = extract_subject_header(part)
 
         if len(part) <= CHUNK_SIZE:
-            # Fits in one chunk
+            # ── KEY FIX: prepend header with scheme/semester info ──
+            content = f"{subject_header}\n{part}" if subject_header and subject_header not in part else part
             chunks.append({
                 "id": f"{safe_doc}_{chunk_id}",
                 "doc_name": doc_name,
-                "content": part,
-                "length": len(part),
+                "content": content,
+                "length": len(content),
             })
             chunk_id += 1
         else:
-            # Too large — split by modules/units keeping header
             sub_chunks = split_by_modules(part, subject_header, safe_doc, doc_name, chunk_id)
             chunks.extend(sub_chunks)
             chunk_id += len(sub_chunks)
@@ -92,24 +87,43 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
 
 
 def extract_subject_header(text: str) -> str:
-    """Extract subject name, code, credits from text block"""
-    lines = text.split('\n')[:8]  # check first 8 lines
+    """Extract subject name, code, credits + scheme/semester from course code pattern.
+    Course code pattern: 22AI3DCDSA = 2022 scheme, 3rd semester, subject DSA
+    """
+    lines = text.split('\n')[:8]
     header_lines = []
+    scheme_info = ""
+
+    # ── KEY FIX: Extract scheme/semester from course code ──
+    # Pattern: 22AI3DCDSA -> year=22(2022), dept=AI, sem=3
+    course_match = re.search(r'\b(\d{2})(AI|MA|HS|NS|PE)(\d)[A-Z]{2,6}\b', text[:500])
+    if course_match:
+        year_map = {"18": "2018", "20": "2020", "21": "2021", "22": "2022"}
+        sem_map = {
+            "1": "1st", "2": "2nd", "3": "3rd", "4": "4th",
+            "5": "5th", "6": "6th", "7": "7th", "8": "8th"
+        }
+        year = year_map.get(course_match.group(1), course_match.group(1))
+        sem = sem_map.get(course_match.group(3), course_match.group(3))
+        scheme_info = f"Scheme: {year} | Semester: {sem}"
 
     for line in lines:
         line = line.strip()
         if not line:
             continue
-        # Keep lines with subject code, name, credits info
         if any(kw in line.lower() for kw in [
             "subject", "course", "code", "credit", "l t p", "hours",
             "semester", "scheme", "pcc", "ipcc", "bsc", "22ai", "21ai", "20ai"
         ]):
             header_lines.append(line)
-        elif re.search(r'\d{2}[A-Z]{2,4}\d{2,3}', line):  # subject code pattern
+        elif re.search(r'\d{2}[A-Z]{2,4}\d{2,3}', line):
             header_lines.append(line)
 
-    return " | ".join(header_lines[:3]) if header_lines else ""
+    base_header = " | ".join(header_lines[:3]) if header_lines else ""
+
+    if scheme_info and base_header:
+        return f"{scheme_info} | {base_header}"
+    return scheme_info or base_header
 
 
 def split_by_modules(text: str, header: str, safe_doc: str, doc_name: str, start_id: int) -> List[Dict[str, Any]]:
@@ -117,12 +131,10 @@ def split_by_modules(text: str, header: str, safe_doc: str, doc_name: str, start
     chunks = []
     chunk_id = start_id
 
-    # Split by Module or Unit
     module_pattern = r'(?=(?:Module|MODULE|Unit|UNIT)\s+[1-6IVX]+)'
     parts = re.split(module_pattern, text)
 
     if len(parts) <= 1:
-        # No modules — just use regular chunking with header
         sentences = text.split('. ')
         current = header + "\n" if header else ""
 
@@ -150,13 +162,11 @@ def split_by_modules(text: str, header: str, safe_doc: str, doc_name: str, start
             })
         return chunks
 
-    # Process each module — prepend subject header to each
     for part in parts:
         part = part.strip()
         if not part or len(part) < 30:
             continue
 
-        # Always prepend subject header so context is preserved
         content = f"{header}\n{part}" if header and header not in part else part
 
         if len(content) <= CHUNK_SIZE:
@@ -168,7 +178,6 @@ def split_by_modules(text: str, header: str, safe_doc: str, doc_name: str, start
             })
             chunk_id += 1
         else:
-            # Module still too large — split by sentences
             sentences = content.split('. ')
             current = ""
             for sentence in sentences:
@@ -220,13 +229,11 @@ class TextChunker:
             logger.warning(f"Empty text for document: {doc_name}")
             return []
 
-        # ── Detect syllabus/scheme documents ─────────────
         if is_syllabus_document(text, doc_name):
-            print(f"[Chunker] 📚 Syllabus detected: {doc_name} — using smart chunking")
+            print(f"[Chunker] Syllabus detected: {doc_name} — using smart chunking")
             return extract_syllabus_chunks(text, doc_name)
 
-        # ── Regular chunking for non-syllabus docs ────────
-        print(f"[Chunker] 📄 Regular chunking: {doc_name}")
+        print(f"[Chunker] Regular chunking: {doc_name}")
         chunks = []
         sentences = text.split('. ')
         current_chunk = ""
