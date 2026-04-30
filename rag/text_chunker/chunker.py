@@ -87,7 +87,7 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
             chunks.extend(sub_chunks)
             chunk_id += len(sub_chunks)
 
-    logger.info(f"[Syllabus Chunker] '{doc_name}' → {len(chunks)} subject chunks")
+    logger.info(f"[Syllabus Chunker] '{doc_name}' -> {len(chunks)} subject chunks")
     return chunks
 
 
