@@ -5,6 +5,7 @@ from backend.agents.query_generator_agent import generate_sql
 from backend.agents.sql_validator_agent import validate_sql
 from backend.agents.synthesis_agent import format_response
 from backend.agents.audit_feedback_agent import audit_pipeline
+from backend.agents.scholar_agent import fetch_scholar_publications  # ── NEW
 from backend.database.db_connection import run_sql
 from backend.rag.retriver import retrieve_documents
 from datetime import datetime
@@ -17,13 +18,11 @@ from pymongo import MongoClient
 # ── Direct MongoDB connection for metrics ──────────────────────────────────────
 try:
     _mongo_url = os.getenv("MONGO_URL", "")
-    # CORRECT ✅
     _client = MongoClient(
-    _mongo_url,
-    tlsAllowInvalidCertificates=True,
-    serverSelectionTimeoutMS=5000
-)
-    
+        _mongo_url,
+        tlsAllowInvalidCertificates=True,
+        serverSelectionTimeoutMS=5000
+    )
     _db = _client["cortex"]
     metrics_col = _db["metrics"]
     print("[Nodes] MongoDB metrics connection established!")
@@ -272,6 +271,16 @@ def synthesis_node(state):
             confidence = "Medium"
         else:
             confidence = "Low"
+
+        # ── NEW: Append live Google Scholar results for research queries ──
+        try:
+            scholar_results = fetch_scholar_publications(query)
+            if scholar_results:
+                answer = answer + scholar_results
+                print(f"[Scholar] Appended live publications to answer")
+        except Exception as e:
+            print(f"[Scholar] Failed gracefully: {e}")
+        # ── END Scholar integration ──
 
         rag_metrics = state.get("rag_metrics_partial", {})
         rag_metrics.update({
