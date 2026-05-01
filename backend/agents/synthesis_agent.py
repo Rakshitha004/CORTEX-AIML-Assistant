@@ -187,7 +187,7 @@ Answer strictly based ONLY on the provided context. Follow these rules:
 6. Keep response focused and clear.
 7. For comparison queries -> use tables to compare clearly.
 8. For lists -> include EVERY item, do not truncate.
-9. For semester/scheme queries -> list ALL subjects with their course codes.
+9. For semester/scheme queries -> COPY the subject code and subject name EXACTLY as they appear in the context. Do NOT paraphrase, rename or reorder subject names. If context says '22AI51 Data Science', output exactly '22AI51 Data Science'. Never substitute a different subject name for a given course code.
 
 Context:
 {context_str}
