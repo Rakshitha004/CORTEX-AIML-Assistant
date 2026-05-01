@@ -26,6 +26,9 @@ NUM_TO_ROMAN = {v: k for k, v in ROMAN_TO_NUM.items()}
 
 YEAR_MAP = {"18": "2018", "19": "2019", "20": "2020", "21": "2021", "22": "2022"}
 
+# Department codes to strip from end of subject names
+DEPT_CODES = r'\s+(?:AIML|AI&ML|AI\s+ML|MAT|MATS|MATH|HSS|ME|CV|BT|CS|EC|EE|AI|PHY|CHE|CIV)\s*$'
+
 
 def is_syllabus_document(text: str, doc_name: str) -> bool:
     doc_lower = doc_name.lower()
@@ -68,9 +71,7 @@ def detect_year_from_text(text: str, doc_name: str) -> str:
 
 
 def extract_semester_blocks(text: str) -> List[tuple]:
-    """
-    Split text into (roman, sem_num, block_text) tuples.
-    """
+    """Split text into (roman, sem_num, block_text) tuples."""
     pattern = r'((?:VIII|VII|VI|IV|V|III|II|I)\s+SEMESTER)'
     parts = re.split(pattern, text, flags=re.IGNORECASE)
 
@@ -99,15 +100,18 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
       - 2020:      20AI4DCFMC, 20AI4DCDAA, 20HS4ICKAN
     Returns list of (code, name, is_elective_option).
     """
+    # ── Fix wrapped subject names (2020 scheme) ───────────
+    # "Foundation in Mathematics for\n1 20AI4DCFMC Computing"
+    # → "Foundation in Mathematics for 1 20AI4DCFMC Computing"
+    block = re.sub(r'([A-Za-z,])\n(\d+\s+\d{2}[A-Z])', r'\1 \2', block)
+
     subjects = []
 
     # ── Universal pattern covering all scheme code formats ──
-    # 2022/2021: \d{2}[A-Z]{2,4}L?\d{2}X?   e.g. 22AI51, 22AIL54, 22AI55X
-    # 2020:      \d{2}[A-Z]{2,4}\d[A-Z]{2,6} e.g. 20AI4DCFMC, 20HS4ICKAN
     subject_pattern = re.compile(
         r'\b(\d{2}[A-Z]{2,4}(?:L?\d{2}X?|\d[A-Z]{2,8}))\s+'
         r'([A-Z][A-Za-z0-9\s\-–&,/()]+?)'
-        r'(?=\s+(?:TD:|PSB:|PS:|MAT|AI&ML|HSS|[0-9])\s|\s+\d\s+\d|\n|$)',
+        r'(?=\s+(?:TD:|PSB:|PS:|MAT|AI&ML|AIML|HSS|ME\b|CV\b|BT\b|[0-9])\b|\s+\d\s+\d|\n|$)',
         re.MULTILINE
     )
 
@@ -119,6 +123,12 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
         # Clean up name
         name = re.sub(r'\s+', ' ', name).strip()
         name = re.sub(r'\s*[-–]\s*$', '', name).strip()
+
+        # ── Strip trailing department codes ───────────────
+        name = re.sub(DEPT_CODES, '', name, flags=re.IGNORECASE).strip()
+
+        # Strip trailing numbers (marks like "50 50 100")
+        name = re.sub(r'\s+\d+(\s+\d+)*\s*$', '', name).strip()
 
         if len(name) < 3 or len(name) > 80:
             continue
