@@ -17,7 +17,8 @@ COMPLEX_KEYWORDS = [
     "compare", "difference", "vs", "versus", "explain", "why", "how does",
     "analyze", "analyse", "list all", "all students", "every", "across all",
     "research", "publication", "project", "collaboration", "multiple",
-    "all faculty", "all subjects", "entire", "detailed", "comprehensive"
+    "all faculty", "all subjects", "entire", "detailed", "comprehensive",
+    "scheme", "semester", "subjects in", "syllabus", "curriculum", "subject code"
 ]
 
 SIMPLE_KEYWORDS = [
@@ -33,17 +34,17 @@ def detect_complexity(query: str) -> str:
         return "complex"
     if any(k in q for k in SIMPLE_KEYWORDS) or len(query.split()) <= 6:
         return "simple"
-    return "simple"  # default to fast model when unsure
+    return "simple"
 
 
 def pick_rag_model(query: str) -> tuple:
     """Returns (model, max_tokens) based on query complexity"""
     complexity = detect_complexity(query)
     if complexity == "simple":
-        print(f"[Routing] Simple query → FAST MODEL (Llama 70B)")
+        print(f"[Routing] Simple query -> FAST MODEL (Llama 70B)")
         return FAST_MODEL, 1000
     else:
-        print(f"[Routing] Complex query → FULL MODEL (Qwen 235B)")
+        print(f"[Routing] Complex query -> FULL MODEL (Qwen 235B)")
         return RAG_MODEL, 4000
 
 
@@ -116,7 +117,7 @@ Rules:
 7. After table, write ONE brief summary sentence
 8. Never show raw dict format like {{'name': 'xyz'}}
 9. For grades: O=Outstanding, A+=Excellent, A=Very Good, B+=Good, B=Above Average, C=Average, P=Pass, F=Fail
-10. If comparison query → highlight differences clearly
+10. If comparison query -> highlight differences clearly
 
 Database Results:
 {result_str}
@@ -174,7 +175,6 @@ def format_rag_result(query, context):
     context_str = context_str.strip()
     context_str = context_str[:20000]
 
-    # ── Route to correct model based on query complexity ──
     model, max_tokens = pick_rag_model(query)
 
     prompt = f"""You are CORTEX, an AI assistant for the AIML department at DSCE Bengaluru.
@@ -185,8 +185,9 @@ Answer strictly based ONLY on the provided context. Follow these rules:
 4. UNKNOWN: If context does not contain the answer say exactly: 'I do not have enough information about that.'
 5. Never use placeholders like [Name]. Only real names from context.
 6. Keep response focused and clear.
-7. For comparison queries → use tables to compare clearly.
-8. For lists → include EVERY item, do not truncate.
+7. For comparison queries -> use tables to compare clearly.
+8. For lists -> include EVERY item, do not truncate.
+9. For semester/scheme queries -> list ALL subjects with their course codes.
 
 Context:
 {context_str}
