@@ -26,7 +26,6 @@ NUM_TO_ROMAN = {v: k for k, v in ROMAN_TO_NUM.items()}
 
 YEAR_MAP = {"18": "2018", "19": "2019", "20": "2020", "21": "2021", "22": "2022"}
 
-# Department codes to strip from end of subject names
 DEPT_CODES = r'\s+(?:AIML|AI&ML|AI\s+ML|MAT|MATS|MATH|HSS|ME|CV|BT|CS|EC|EE|AI|PHY|CHE|CIV)\s*$'
 
 
@@ -38,6 +37,19 @@ def is_syllabus_document(text: str, doc_name: str) -> bool:
     if sum(1 for kw in SYLLABUS_KEYWORDS if kw in text_lower) >= 3:
         return True
     return False
+
+
+def is_aiml_block(block: str) -> bool:
+    """Check if a semester block belongs to AIML department."""
+    block_lower = block.lower()
+    # Must contain AIML course codes or department name
+    return any(kw in block_lower for kw in [
+        "ai&ml", "aiml", "artificial intelligence & machine learning",
+        "artificial intelligence and machine learning",
+        "20ai", "21ai", "22ai",
+        "ai4d", "ai5d", "ai6d", "ai7d", "ai8d",
+        "ai1d", "ai2d", "ai3d"
+    ])
 
 
 def clean_pdf_text(text: str) -> str:
@@ -100,14 +112,11 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
       - 2020:      20AI4DCFMC, 20AI4DCDAA, 20HS4ICKAN
     Returns list of (code, name, is_elective_option).
     """
-    # ── Fix wrapped subject names (2020 scheme) ───────────
-    # "Foundation in Mathematics for\n1 20AI4DCFMC Computing"
-    # → "Foundation in Mathematics for 1 20AI4DCFMC Computing"
+    # Fix wrapped subject names (2020 scheme)
     block = re.sub(r'([A-Za-z,])\n(\d+\s+\d{2}[A-Z])', r'\1 \2', block)
 
     subjects = []
 
-    # ── Universal pattern covering all scheme code formats ──
     subject_pattern = re.compile(
         r'\b(\d{2}[A-Z]{2,4}(?:L?\d{2}X?|\d[A-Z]{2,8}))\s+'
         r'([A-Z][A-Za-z0-9\s\-–&,/()]+?)'
@@ -120,14 +129,9 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
         code = match.group(1).strip()
         name = match.group(2).strip()
 
-        # Clean up name
         name = re.sub(r'\s+', ' ', name).strip()
         name = re.sub(r'\s*[-–]\s*$', '', name).strip()
-
-        # ── Strip trailing department codes ───────────────
         name = re.sub(DEPT_CODES, '', name, flags=re.IGNORECASE).strip()
-
-        # Strip trailing numbers (marks like "50 50 100")
         name = re.sub(r'\s+\d+(\s+\d+)*\s*$', '', name).strip()
 
         if len(name) < 3 or len(name) > 80:
@@ -135,7 +139,6 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
         if code in seen_codes:
             continue
 
-        # Elective options have 3-digit suffix like 22AI551
         is_elective_option = bool(re.match(r'\d{2}[A-Z]{2,4}\d{3}$', code))
 
         seen_codes.add(code)
@@ -164,12 +167,26 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         })
         return chunks
 
+    # Track best chunk per semester (most subjects wins)
+    best_per_semester = {}  # roman -> (subjects, block)
+
     for roman, sem_num, block in semester_blocks:
         if not block.strip():
             continue
 
-        subjects = extract_subjects_from_block(block, sem_num, year, doc_name)
+        # ── Only process AIML department blocks ──────────
+        if not is_aiml_block(block):
+            continue
 
+        subjects = extract_subjects_from_block(block, sem_num, year, doc_name)
+        core_count = sum(1 for _, _, is_elec in subjects if not is_elec)
+
+        # Keep the block with most core subjects for each semester
+        if roman not in best_per_semester or core_count > best_per_semester[roman][0]:
+            best_per_semester[roman] = (core_count, sem_num, subjects, block)
+
+    # Build chunks from best blocks
+    for roman, (core_count, sem_num, subjects, block) in best_per_semester.items():
         header = f"Scheme: {year} | Semester: {sem_num} | {roman} SEMESTER"
 
         core_subjects = [(c, n) for c, n, is_elec in subjects if not is_elec]
