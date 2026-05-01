@@ -61,7 +61,6 @@ def detect_year_from_text(text: str, doc_name: str) -> str:
     for year in ["2022", "2021", "2020", "2018"]:
         if year in doc_lower:
             return year
-    # Try from content
     match = re.search(r'\b(2018|2019|2020|2021|2022)\b', text[:500])
     if match:
         return match.group(1)
@@ -70,10 +69,8 @@ def detect_year_from_text(text: str, doc_name: str) -> str:
 
 def extract_semester_blocks(text: str) -> List[tuple]:
     """
-    Split text into (semester_name, block_text) tuples.
-    Returns list of (sem_roman, sem_num, block_text).
+    Split text into (roman, sem_num, block_text) tuples.
     """
-    # Split on semester headings
     pattern = r'((?:VIII|VII|VI|IV|V|III|II|I)\s+SEMESTER)'
     parts = re.split(pattern, text, flags=re.IGNORECASE)
 
@@ -81,7 +78,6 @@ def extract_semester_blocks(text: str) -> List[tuple]:
     i = 0
     while i < len(parts):
         part = parts[i].strip()
-        # Check if this part is a semester heading
         sem_match = re.match(r'^(VIII|VII|VI|IV|V|III|II|I)\s+SEMESTER$', part, re.IGNORECASE)
         if sem_match and i + 1 < len(parts):
             roman = sem_match.group(1).upper()
@@ -95,17 +91,23 @@ def extract_semester_blocks(text: str) -> List[tuple]:
     return blocks
 
 
-def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: str) -> List[str]:
+def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: str) -> List[tuple]:
     """
     Extract individual subject rows from a semester block.
-    Returns list of subject strings like '22AI51 Data Science'.
+    Supports all scheme formats:
+      - 2022/2021: 22AI51, 22AIL54, 22AI55X, 22RM56, 22ES57
+      - 2020:      20AI4DCFMC, 20AI4DCDAA, 20HS4ICKAN
+    Returns list of (code, name, is_elective_option).
     """
     subjects = []
 
-    # Pattern to match subject rows: course code followed by subject name
-    # Matches: 22AI51, 22AIL54, 22RM56, 22ES57, 22NS58, 22AI55X etc.
+    # ── Universal pattern covering all scheme code formats ──
+    # 2022/2021: \d{2}[A-Z]{2,4}L?\d{2}X?   e.g. 22AI51, 22AIL54, 22AI55X
+    # 2020:      \d{2}[A-Z]{2,4}\d[A-Z]{2,6} e.g. 20AI4DCFMC, 20HS4ICKAN
     subject_pattern = re.compile(
-        r'\b(\d{2}[A-Z]{2,4}L?\d{2}X?)\s+([A-Z][A-Za-z0-9\s\-–&,/()]+?)(?=\s+(?:TD:|PSB:|PS:|3|2|1|0)\s|\s+\d\s+\d|\n|$)',
+        r'\b(\d{2}[A-Z]{2,4}(?:L?\d{2}X?|\d[A-Z]{2,8}))\s+'
+        r'([A-Z][A-Za-z0-9\s\-–&,/()]+?)'
+        r'(?=\s+(?:TD:|PSB:|PS:|MAT|AI&ML|HSS|[0-9])\s|\s+\d\s+\d|\n|$)',
         re.MULTILINE
     )
 
@@ -118,15 +120,13 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
         name = re.sub(r'\s+', ' ', name).strip()
         name = re.sub(r'\s*[-–]\s*$', '', name).strip()
 
-        # Skip if too short or looks like garbage
         if len(name) < 3 or len(name) > 80:
             continue
         if code in seen_codes:
             continue
 
-        # Skip elective option rows (3-digit codes like 22AI551) for the main list
-        # but still include them labeled as electives
-        is_elective_option = bool(re.match(r'\d{2}[A-Z]{2,4}\d{3}', code))
+        # Elective options have 3-digit suffix like 22AI551
+        is_elective_option = bool(re.match(r'\d{2}[A-Z]{2,4}\d{3}$', code))
 
         seen_codes.add(code)
         subjects.append((code, name, is_elective_option))
@@ -142,12 +142,9 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
     chunk_id = 0
 
     year = detect_year_from_text(text, doc_name)
-
-    # Extract semester blocks
     semester_blocks = extract_semester_blocks(text)
 
     if not semester_blocks:
-        # Fallback: treat whole doc as one chunk
         logger.warning(f"[Chunker] No semester blocks found in {doc_name}, falling back")
         chunks.append({
             "id": f"{safe_doc}_{chunk_id}",
@@ -161,18 +158,13 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         if not block.strip():
             continue
 
-        # Extract subjects from this semester block
         subjects = extract_subjects_from_block(block, sem_num, year, doc_name)
 
-        # Build the main semester chunk content
         header = f"Scheme: {year} | Semester: {sem_num} | {roman} SEMESTER"
 
-        # Core subjects (2-digit codes)
         core_subjects = [(c, n) for c, n, is_elec in subjects if not is_elec]
-        # Elective options (3-digit codes)
         elective_subjects = [(c, n) for c, n, is_elec in subjects if is_elec]
 
-        # Build content string
         content_lines = [header, ""]
 
         if core_subjects:
@@ -186,7 +178,6 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
             for code, name in elective_subjects:
                 content_lines.append(f"{code} {name}")
 
-        # Also include raw block text for context (truncated)
         content_lines.append("")
         content_lines.append("--- Raw Content ---")
         content_lines.append(block[:1000])
@@ -203,8 +194,7 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
 
         logger.info(f"[Chunker] {doc_name} | {roman} SEMESTER | {len(core_subjects)} core + {len(elective_subjects)} elective subjects")
 
-    # Also chunk remaining content (syllabus details, modules etc.)
-    # Split by subject patterns for detailed syllabus
+    # Also chunk detailed syllabus content (modules, units etc.)
     subject_patterns = [
         r'(?=(?:PCC|IPCC|BSC|PCCL|PEC|AEC|SEC|HSMC|OEC|ESC|SCR)\s+\d{2}[A-Z]{2,3}\d{2,3})',
         r'(?=(?:Course Code|Subject Code)\s*[:\|])',
@@ -219,7 +209,6 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         if not part or len(part) < 100:
             continue
 
-        # Detect which semester this detail belongs to
         sem_match = re.search(r'\b(VIII|VII|VI|IV|V|III|II|I)\s+SEMESTER\b', part[:200], re.IGNORECASE)
         sem_context = ""
         if sem_match:
