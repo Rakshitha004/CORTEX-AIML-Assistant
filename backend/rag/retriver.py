@@ -154,6 +154,94 @@ def rrf_fusion(scores_list: list, k: int = 60) -> dict:
     return fused
 
 
+# ─── Scheme Query Filter ──────────────────────────────────
+def filter_scheme_results(results: list, query: str) -> list:
+    """
+    For scheme/semester queries, filter and re-sort results to prioritize:
+    1. Correct year (2022/2021/2020)
+    2. Correct semester
+    3. Core subjects over elective lists
+    """
+    query_lower = query.lower()
+
+    # Detect year
+    year = None
+    for y in ["2022", "2021", "2020", "2018"]:
+        if y in query_lower:
+            year = y
+            break
+
+    # Detect semester
+    sem_map = {
+        "i semester": "1st", "ii semester": "2nd", "iii semester": "3rd",
+        "iv semester": "4th", "v semester": "5th", "vi semester": "6th",
+        "vii semester": "7th", "viii semester": "8th",
+        "1st semester": "1st", "2nd semester": "2nd", "3rd semester": "3rd",
+        "4th semester": "4th", "5th semester": "5th", "6th semester": "6th",
+        "7th semester": "7th", "8th semester": "8th",
+        "1 semester": "1st", "2 semester": "2nd", "3 semester": "3rd",
+        "4 semester": "4th", "5 semester": "5th", "6 semester": "6th",
+        "7 semester": "7th", "8 semester": "8th",
+    }
+    roman_map = {
+        "1st": "v semester", "2nd": "ii semester", "3rd": "iii semester",
+        "4th": "iv semester", "5th": "v semester", "6th": "vi semester",
+        "7th": "vii semester", "8th": "viii semester"
+    }
+
+    matched_sem = None
+    for sem_phrase, sem_num in sem_map.items():
+        if sem_phrase in query_lower:
+            matched_sem = sem_num
+            break
+
+    if not year and not matched_sem:
+        return results  # Not a scheme query, return as-is
+
+    def score_result(r):
+        doc_name = r.get("doc_name", "").lower()
+        content = r.get("content", "").lower()
+        score = r.get("score", 0.0)
+
+        bonus = 0.0
+
+        # ── Year match — hard filter ──────────────────────
+        if year:
+            if year in doc_name:
+                bonus += 100.0  # massive boost for correct year
+            else:
+                bonus -= 50.0   # massive penalty for wrong year
+
+        # ── Semester match ────────────────────────────────
+        if matched_sem:
+            if f"semester: {matched_sem}" in content:
+                bonus += 50.0
+            # Also check roman numeral in content
+            roman_reverse = {
+                "1st": "i semester", "2nd": "ii semester", "3rd": "iii semester",
+                "4th": "iv semester", "5th": "v semester", "6th": "vi semester",
+                "7th": "vii semester", "8th": "viii semester"
+            }
+            roman = roman_reverse.get(matched_sem, "")
+            if roman and roman in content:
+                bonus += 30.0
+
+        # ── Penalize pure elective chunks ─────────────────
+        elective_only = re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content) and not re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
+        if elective_only:
+            bonus -= 30.0
+
+        return score + bonus
+
+    # Re-sort by combined score
+    filtered = sorted(results, key=score_result, reverse=True)
+    print(f"[SchemeFilter] Re-sorted {len(filtered)} results for year={year}, sem={matched_sem}")
+    for i, r in enumerate(filtered[:5]):
+        print(f"  [{i+1}] {r.get('doc_name')} | rerank={r.get('score'):.3f} | content[:60]: {r.get('content','')[:60]}")
+
+    return filtered
+
+
 def hybrid_search(query: str, top_k: int = 20) -> list:
     try:
         from rag.embeddings.generator import get_embedding_generator
@@ -198,26 +286,9 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
         for idx, score in fused.items():
             combined_scores[idx] = score
 
-        # ── Semester detection from query ─────────────────
-        query_lower = query.lower()
-        sem_map = {
-            "i semester": "1st", "ii semester": "2nd", "iii semester": "3rd",
-            "iv semester": "4th", "v semester": "5th", "vi semester": "6th",
-            "vii semester": "7th", "viii semester": "8th",
-            "1st semester": "1st", "2nd semester": "2nd", "3rd semester": "3rd",
-            "4th semester": "4th", "5th semester": "5th", "6th semester": "6th",
-            "7th semester": "7th", "8th semester": "8th",
-            "1 semester": "1st", "2 semester": "2nd", "3 semester": "3rd",
-            "4 semester": "4th", "5 semester": "5th", "6 semester": "6th",
-            "7 semester": "7th", "8 semester": "8th",
-        }
-        matched_sem = None
-        for sem_phrase, sem_num in sem_map.items():
-            if sem_phrase in query_lower:
-                matched_sem = sem_num
-                break
-
         # ── Smart Query-Based Boosting ────────────────────
+        query_lower = query.lower()
+
         for i, doc in enumerate(all_docs):
             doc_name = doc.get("doc_name", "").lower()
             content = doc.get("content", "").lower()
@@ -231,23 +302,12 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
             elif any(kw in query_lower for kw in ["scheme", "syllabus", "semester", "subject", "curriculum", "credits", "module", "elective"]):
                 if any(kw in doc_name for kw in ["scheme", "syllabus", "2020", "2021", "2022"]):
                     combined_scores[i] *= 3.0
-                    # Extra boost for specific year mentioned
                     if "2022" in query_lower and "2022" in doc_name:
                         combined_scores[i] *= 3.0
                     elif "2021" in query_lower and "2021" in doc_name:
                         combined_scores[i] *= 3.0
                     elif "2020" in query_lower and "2020" in doc_name:
                         combined_scores[i] *= 3.0
-
-                    # ── Semester-specific boosting ────────
-                    if matched_sem:
-                        if f"semester: {matched_sem}" in content:
-                            combined_scores[i] *= 4.0
-                        # Penalize pure elective chunks (only 3-digit codes, no core subjects)
-                        elective_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content)
-                        core_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
-                        if elective_pattern and not core_pattern:
-                            combined_scores[i] *= 0.3
 
             elif any(kw in query_lower for kw in ["research", "publication", "paper", "journal", "project"]):
                 if "research" in doc_name:
@@ -297,6 +357,10 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
                 "doc_name": doc["doc_name"],
                 "score": float(score),
             })
+
+        # ── Post-reranking scheme filter ──────────────────
+        if any(kw in query_lower for kw in ["scheme", "syllabus", "semester", "subject", "curriculum"]):
+            results = filter_scheme_results(results, query)
 
         return results
 
