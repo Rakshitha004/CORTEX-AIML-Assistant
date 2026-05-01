@@ -212,16 +212,44 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
                         combined_scores[i] *= 3.0
 
             elif any(kw in query_lower for kw in ["scheme", "syllabus", "semester", "subject", "curriculum", "credits", "module", "elective"]):
-                # ── Scheme/Syllabus strong boosting ───────
                 if any(kw in doc_name for kw in ["scheme", "syllabus", "2020", "2021", "2022"]):
                     combined_scores[i] *= 3.0
-                    # Extra boost for specific year mentioned
-                    if "2022" in query_lower and "2022" in doc_name:
-                        combined_scores[i] *= 3.0
-                    elif "2021" in query_lower and "2021" in doc_name:
-                        combined_scores[i] *= 3.0
-                    elif "2020" in query_lower and "2020" in doc_name:
-                        combined_scores[i] *= 3.0
+                # Extra boost for specific year mentioned
+                if "2022" in query_lower and "2022" in doc_name:
+                    combined_scores[i] *= 3.0
+                elif "2021" in query_lower and "2021" in doc_name:
+                    combined_scores[i] *= 3.0
+                elif "2020" in query_lower and "2020" in doc_name:
+                    combined_scores[i] *= 3.0
+
+        # ── Semester-specific boosting ────────────────
+        sem_map = {
+            "i semester": "1st", "ii semester": "2nd", "iii semester": "3rd",
+            "iv semester": "4th", "v semester": "5th", "vi semester": "6th",
+            "vii semester": "7th", "viii semester": "8th",
+            "1st semester": "1st", "2nd semester": "2nd", "3rd semester": "3rd",
+            "4th semester": "4th", "5th semester": "5th", "6th semester": "6th",
+            "7th semester": "7th", "8th semester": "8th",
+            "1 semester": "1st", "2 semester": "2nd", "3 semester": "3rd",
+            "4 semester": "4th", "5 semester": "5th", "6 semester": "6th",
+            "7 semester": "7th", "8 semester": "8th",
+        }
+        matched_sem = None
+        for sem_phrase, sem_num in sem_map.items():
+            if sem_phrase in query_lower:
+                matched_sem = sem_num
+                break
+
+        if matched_sem:
+            # Boost chunks that contain the correct semester context
+            if f"semester: {matched_sem}" in content:
+                combined_scores[i] *= 4.0
+            # Penalize elective option chunks (3-digit subject codes like 22AI551)
+            # when query is about semester subjects — electives are supplementary
+            elective_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content)
+            core_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
+            if elective_pattern and not core_pattern:
+                combined_scores[i] *= 0.3  # penalize pure elective chunks
 
             elif any(kw in query_lower for kw in ["research", "publication", "paper", "journal", "project"]):
                 if "research" in doc_name:
