@@ -198,31 +198,8 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
         for idx, score in fused.items():
             combined_scores[idx] = score
 
-        # ── Smart Query-Based Boosting ────────────────────
+        # ── Semester detection from query ─────────────────
         query_lower = query.lower()
-
-        for i, doc in enumerate(all_docs):
-            doc_name = doc.get("doc_name", "").lower()
-            content = doc.get("content", "").lower()
-
-            if any(kw in query_lower for kw in ["faculty", "professor", "staff", "lecturer", "who are", "list all", "hod", "head"]):
-                if "faculty" in doc_name:
-                    combined_scores[i] *= 2.0
-                    if "faculty name" in content or "designation" in content:
-                        combined_scores[i] *= 3.0
-
-            elif any(kw in query_lower for kw in ["scheme", "syllabus", "semester", "subject", "curriculum", "credits", "module", "elective"]):
-                if any(kw in doc_name for kw in ["scheme", "syllabus", "2020", "2021", "2022"]):
-                    combined_scores[i] *= 3.0
-                # Extra boost for specific year mentioned
-                if "2022" in query_lower and "2022" in doc_name:
-                    combined_scores[i] *= 3.0
-                elif "2021" in query_lower and "2021" in doc_name:
-                    combined_scores[i] *= 3.0
-                elif "2020" in query_lower and "2020" in doc_name:
-                    combined_scores[i] *= 3.0
-
-        # ── Semester-specific boosting ────────────────
         sem_map = {
             "i semester": "1st", "ii semester": "2nd", "iii semester": "3rd",
             "iv semester": "4th", "v semester": "5th", "vi semester": "6th",
@@ -240,16 +217,37 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
                 matched_sem = sem_num
                 break
 
-        if matched_sem:
-            # Boost chunks that contain the correct semester context
-            if f"semester: {matched_sem}" in content:
-                combined_scores[i] *= 4.0
-            # Penalize elective option chunks (3-digit subject codes like 22AI551)
-            # when query is about semester subjects — electives are supplementary
-            elective_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content)
-            core_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
-            if elective_pattern and not core_pattern:
-                combined_scores[i] *= 0.3  # penalize pure elective chunks
+        # ── Smart Query-Based Boosting ────────────────────
+        for i, doc in enumerate(all_docs):
+            doc_name = doc.get("doc_name", "").lower()
+            content = doc.get("content", "").lower()
+
+            if any(kw in query_lower for kw in ["faculty", "professor", "staff", "lecturer", "who are", "list all", "hod", "head"]):
+                if "faculty" in doc_name:
+                    combined_scores[i] *= 2.0
+                    if "faculty name" in content or "designation" in content:
+                        combined_scores[i] *= 3.0
+
+            elif any(kw in query_lower for kw in ["scheme", "syllabus", "semester", "subject", "curriculum", "credits", "module", "elective"]):
+                if any(kw in doc_name for kw in ["scheme", "syllabus", "2020", "2021", "2022"]):
+                    combined_scores[i] *= 3.0
+                    # Extra boost for specific year mentioned
+                    if "2022" in query_lower and "2022" in doc_name:
+                        combined_scores[i] *= 3.0
+                    elif "2021" in query_lower and "2021" in doc_name:
+                        combined_scores[i] *= 3.0
+                    elif "2020" in query_lower and "2020" in doc_name:
+                        combined_scores[i] *= 3.0
+
+                    # ── Semester-specific boosting ────────
+                    if matched_sem:
+                        if f"semester: {matched_sem}" in content:
+                            combined_scores[i] *= 4.0
+                        # Penalize pure elective chunks (only 3-digit codes, no core subjects)
+                        elective_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content)
+                        core_pattern = re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
+                        if elective_pattern and not core_pattern:
+                            combined_scores[i] *= 0.3
 
             elif any(kw in query_lower for kw in ["research", "publication", "paper", "journal", "project"]):
                 if "research" in doc_name:
@@ -352,6 +350,13 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         print(f"\n=== Retrieved {len(results)} chunks after reranking ===")
         for i, r in enumerate(results[:5]):
             print(f"[{i+1}] doc: {r.get('doc_name')} | rerank_score: {r.get('score'):.3f} | preview: {r.get('content','')[:80]}")
+
+        # ── DEBUG: Print top chunk contents ───────────────
+        print(f"\n=== TOP CHUNK CONTENT FOR DEBUG ===")
+        for i, r in enumerate(results[:3]):
+            print(f"\n[CHUNK {i+1}] doc: {r.get('doc_name')}")
+            print(f"CONTENT: {r.get('content', '')[:300]}")
+            print("---")
 
         documents = []
         for result in results:
