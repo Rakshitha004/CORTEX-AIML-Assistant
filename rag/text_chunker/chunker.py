@@ -27,7 +27,28 @@ def is_syllabus_document(text: str, doc_name: str) -> bool:
     return False
 
 
+def clean_pdf_text(text: str) -> str:
+    """Remove garbled rotated text produced by pdfplumber on scheme PDFs."""
+    lines = text.split('\n')
+    clean_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            clean_lines.append(line)
+            continue
+        words = stripped.split()
+        if len(words) > 5:
+            single_chars = sum(1 for w in words if len(w) == 1)
+            if single_chars / len(words) > 0.5:  # >50% single chars = garbled rotated text
+                continue
+        clean_lines.append(line)
+    return '\n'.join(clean_lines)
+
+
 def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
+    # ── Clean garbled rotated text first ──
+    text = clean_pdf_text(text)
+
     chunks = []
     safe_doc = re.sub(r'[^a-zA-Z0-9]', '_', doc_name)
     chunk_id = 0
