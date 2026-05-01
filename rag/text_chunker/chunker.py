@@ -32,47 +32,73 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
     safe_doc = re.sub(r'[^a-zA-Z0-9]', '_', doc_name)
     chunk_id = 0
 
-    subject_patterns = [
-        r'(?=(?:PCC|IPCC|BSC|PCCL|PEC|AEC|SEC|HSMC|OEC|ESC|SCR)\s+\d{2}[A-Z]{2,3}\d{2,3})',
-        r'(?=(?:Course Code|Subject Code)\s*[:\|])',
-        r'(?=Module\s+[1-6]\s*[:\|])',
-        r'(?=UNIT\s+[IVX]+\s*[:\|])',
-    ]
-
-    combined_pattern = '|'.join(subject_patterns)
-    parts = re.split(combined_pattern, text)
-
-    if len(parts) <= 1:
-        # ── FIXED: split by semester heading (ALL CAPS) ──
-        parts = re.split(
+    # ── STEP 1: Always split by semester boundary first ──
+    semester_parts = re.split(
         r'\n(?=(?:VIII|VII|VI|IV|V|III|II|I)\s+SEMESTER)',
         text,
         flags=re.IGNORECASE
-)
+    )
 
-    if len(parts) <= 1:
-        parts = [p for p in re.split(r'\n{3,}', text) if p.strip()]
+    # If no semester boundaries found, treat whole doc as one part
+    if len(semester_parts) <= 1:
+        semester_parts = [text]
 
-    for part in parts:
-        part = part.strip()
-        if not part or len(part) < 50:
+    for sem_part in semester_parts:
+        sem_part = sem_part.strip()
+        if not sem_part:
             continue
 
-        subject_header = extract_subject_header(part)
+        # Detect which semester this part belongs to
+        sem_heading_match = re.search(
+            r'\b(I|II|III|IV|V|VI|VII|VIII)\s+SEMESTER\b',
+            sem_part[:300], flags=re.IGNORECASE
+        )
+        sem_context = ""
+        if sem_heading_match:
+            roman_map = {
+                "I": "1st", "II": "2nd", "III": "3rd", "IV": "4th",
+                "V": "5th", "VI": "6th", "VII": "7th", "VIII": "8th"
+            }
+            sem_num = roman_map.get(sem_heading_match.group(1).upper(), sem_heading_match.group(1))
+            sem_context = f"Semester: {sem_num}"
 
-        if len(part) <= CHUNK_SIZE:
-            content = f"{subject_header}\n{part}" if subject_header and subject_header not in part else part
-            chunks.append({
-                "id": f"{safe_doc}_{chunk_id}",
-                "doc_name": doc_name,
-                "content": content,
-                "length": len(content),
-            })
-            chunk_id += 1
-        else:
-            sub_chunks = split_by_modules(part, subject_header, safe_doc, doc_name, chunk_id)
-            chunks.extend(sub_chunks)
-            chunk_id += len(sub_chunks)
+        # ── STEP 2: Split each semester part by subject ──
+        subject_patterns = [
+            r'(?=(?:PCC|IPCC|BSC|PCCL|PEC|AEC|SEC|HSMC|OEC|ESC|SCR)\s+\d{2}[A-Z]{2,3}\d{2,3})',
+            r'(?=(?:Course Code|Subject Code)\s*[:\|])',
+            r'(?=Module\s+[1-6]\s*[:\|])',
+            r'(?=UNIT\s+[IVX]+\s*[:\|])',
+        ]
+        combined_pattern = '|'.join(subject_patterns)
+        parts = re.split(combined_pattern, sem_part)
+
+        if len(parts) <= 1:
+            parts = [p for p in re.split(r'\n{3,}', sem_part) if p.strip()]
+
+        for part in parts:
+            part = part.strip()
+            if not part or len(part) < 50:
+                continue
+
+            subject_header = extract_subject_header(part)
+
+            # ── Inject semester context if not already present ──
+            if sem_context and sem_context not in subject_header:
+                subject_header = f"{sem_context} | {subject_header}" if subject_header else sem_context
+
+            if len(part) <= CHUNK_SIZE:
+                content = f"{subject_header}\n{part}" if subject_header and subject_header not in part else part
+                chunks.append({
+                    "id": f"{safe_doc}_{chunk_id}",
+                    "doc_name": doc_name,
+                    "content": content,
+                    "length": len(content),
+                })
+                chunk_id += 1
+            else:
+                sub_chunks = split_by_modules(part, subject_header, safe_doc, doc_name, chunk_id)
+                chunks.extend(sub_chunks)
+                chunk_id += len(sub_chunks)
 
     logger.info(f"[Syllabus Chunker] '{doc_name}' -> {len(chunks)} subject chunks")
     return chunks
