@@ -45,10 +45,10 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
     if len(parts) <= 1:
         # ── FIXED: split by semester heading (ALL CAPS) ──
         parts = re.split(
-            r'(?=(?:I|II|III|IV|V|VI|VII|VIII)\s+SEMESTER)',
-            text,
-            flags=re.IGNORECASE
-        )
+        r'\n(?=(?:VIII|VII|VI|IV|V|III|II|I)\s+SEMESTER)',
+        text,
+        flags=re.IGNORECASE
+)
 
     if len(parts) <= 1:
         parts = [p for p in re.split(r'\n{3,}', text) if p.strip()]
