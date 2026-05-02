@@ -28,6 +28,8 @@ YEAR_MAP = {"18": "2018", "19": "2019", "20": "2020", "21": "2021", "22": "2022"
 
 DEPT_CODES = r'\s+(?:AIML|AI&ML|AI\s+ML|MAT|MATS|MATH|HSS|ME|CV|BT|CS|EC|EE|AI|PHY|CHE|CIV)\s*$'
 
+COURSE_TYPES = r'(?:BSC|PCC|IPCC|PCCL|ESC|AEC|SEC|SCR|UHV|PROJ|INT|MC|HSMC|OEC|PEC|NCMC)'
+
 
 def is_syllabus_document(text: str, doc_name: str) -> bool:
     doc_lower = doc_name.lower()
@@ -42,7 +44,6 @@ def is_syllabus_document(text: str, doc_name: str) -> bool:
 def is_aiml_block(block: str) -> bool:
     """Check if a semester block belongs to AIML department."""
     block_lower = block.lower()
-    # Must contain AIML course codes or department name
     return any(kw in block_lower for kw in [
         "ai&ml", "aiml", "artificial intelligence & machine learning",
         "artificial intelligence and machine learning",
@@ -82,6 +83,45 @@ def detect_year_from_text(text: str, doc_name: str) -> str:
     return ""
 
 
+def fix_wrapped_lines(block: str) -> str:
+    """
+    Fix subject names that wrap across lines in PDF extraction.
+
+    Pattern 1 (2020 scheme):
+        Foundation in Mathematics for
+        1 20AI4DCFMC Computing MAT
+        -> Foundation in Mathematics for 1 20AI4DCFMC Computing MAT
+
+    Pattern 2 (2022/2021 scheme):
+        Data Structures with Applications  TD: AIML
+        4 IPCC 22AI34                      PSB: AIML
+        -> Data Structures with Applications 4 IPCC 22AI34
+
+    Pattern 3 (name before course type):
+        Python for Machine Learning Lab
+        5 PCCL 22AIL35
+        -> Python for Machine Learning Lab 5 PCCL 22AIL35
+    """
+    # Pattern 1: name ends with letter, next line starts with number + course code
+    block = re.sub(r'([A-Za-z,])\n(\d+\s+\d{2}[A-Z])', r'\1 \2', block)
+
+    # Pattern 2: name ends with letter, next line starts with number + course type
+    block = re.sub(
+        r'([A-Za-z])\n(\d+\s+' + COURSE_TYPES + r'\b)',
+        r'\1 \2',
+        block
+    )
+
+    # Pattern 3: standalone subject name line followed by course type + code
+    block = re.sub(
+        r'([A-Za-z])\n(' + COURSE_TYPES + r'\s+\d{2}[A-Z])',
+        r'\1 \2',
+        block
+    )
+
+    return block
+
+
 def extract_semester_blocks(text: str) -> List[tuple]:
     """Split text into (roman, sem_num, block_text) tuples."""
     pattern = r'((?:VIII|VII|VI|IV|V|III|II|I)\s+SEMESTER)'
@@ -112,14 +152,14 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
       - 2020:      20AI4DCFMC, 20AI4DCDAA, 20HS4ICKAN
     Returns list of (code, name, is_elective_option).
     """
-    # Fix wrapped subject names (2020 scheme)
-    block = re.sub(r'([A-Za-z,])\n(\d+\s+\d{2}[A-Z])', r'\1 \2', block)
+    # Fix wrapped lines first
+    block = fix_wrapped_lines(block)
 
     subjects = []
 
     subject_pattern = re.compile(
         r'\b(\d{2}[A-Z]{2,4}(?:L?\d{2}X?|\d[A-Z]{2,8}))\s+'
-        r'([A-Z][A-Za-z0-9\s\-–&,/()]+?)'
+        r'([A-Z][A-Za-z0-9\s\-\u2013&,/()]+?)'
         r'(?=\s+(?:TD:|PSB:|PS:|MAT|AI&ML|AIML|HSS|ME\b|CV\b|BT\b|[0-9])\b|\s+\d\s+\d|\n|$)',
         re.MULTILINE
     )
@@ -130,9 +170,10 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
         name = match.group(2).strip()
 
         name = re.sub(r'\s+', ' ', name).strip()
-        name = re.sub(r'\s*[-–]\s*$', '', name).strip()
+        name = re.sub(r'\s*[-\u2013]\s*$', '', name).strip()
         name = re.sub(DEPT_CODES, '', name, flags=re.IGNORECASE).strip()
         name = re.sub(r'\s+\d+(\s+\d+)*\s*$', '', name).strip()
+        name = re.sub(r'\s+(?:TD|PSB|PS|TD-Maths|PSB-Maths)\s*$', '', name, flags=re.IGNORECASE).strip()
 
         if len(name) < 3 or len(name) > 80:
             continue
@@ -168,24 +209,21 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         return chunks
 
     # Track best chunk per semester (most subjects wins)
-    best_per_semester = {}  # roman -> (subjects, block)
+    best_per_semester = {}
 
     for roman, sem_num, block in semester_blocks:
         if not block.strip():
             continue
 
-        # ── Only process AIML department blocks ──────────
         if not is_aiml_block(block):
             continue
 
         subjects = extract_subjects_from_block(block, sem_num, year, doc_name)
         core_count = sum(1 for _, _, is_elec in subjects if not is_elec)
 
-        # Keep the block with most core subjects for each semester
         if roman not in best_per_semester or core_count > best_per_semester[roman][0]:
             best_per_semester[roman] = (core_count, sem_num, subjects, block)
 
-    # Build chunks from best blocks
     for roman, (core_count, sem_num, subjects, block) in best_per_semester.items():
         header = f"Scheme: {year} | Semester: {sem_num} | {roman} SEMESTER"
 
@@ -221,7 +259,7 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
 
         logger.info(f"[Chunker] {doc_name} | {roman} SEMESTER | {len(core_subjects)} core + {len(elective_subjects)} elective subjects")
 
-    # Also chunk detailed syllabus content (modules, units etc.)
+    # Also chunk detailed syllabus content
     subject_patterns = [
         r'(?=(?:PCC|IPCC|BSC|PCCL|PEC|AEC|SEC|HSMC|OEC|ESC|SCR)\s+\d{2}[A-Z]{2,3}\d{2,3})',
         r'(?=(?:Course Code|Subject Code)\s*[:\|])',

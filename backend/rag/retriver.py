@@ -45,6 +45,9 @@ HYDE_TRIGGERS = [
 
 def should_use_hyde(query: str) -> bool:
     q = query.lower()
+    # Skip HyDE for scheme/semester queries — it generates wrong hypothetical docs
+    if any(kw in q for kw in ["scheme", "semester", "subjects in", "subject code", "subjects are"]):
+        return False
     return any(kw in q for kw in HYDE_TRIGGERS)
 
 def generate_hypothetical_answer(query: str) -> str:
@@ -83,6 +86,12 @@ Hypothetical passage:"""}],
 # ─── Query Expansion ──────────────────────────────────────
 def expand_query(query: str) -> str:
     try:
+        # Skip expansion for scheme queries — they're specific enough
+        query_lower = query.lower()
+        if any(kw in query_lower for kw in ["scheme", "semester", "subjects in", "subjects are"]):
+            print(f"[Query Expansion] Skipped for scheme query")
+            return query
+
         if len(query.split()) > 10:
             return query
 
@@ -154,14 +163,37 @@ def rrf_fusion(scores_list: list, k: int = 60) -> dict:
     return fused
 
 
-# ─── Scheme Query Filter ──────────────────────────────────
+# ─── Semester detection (longest match first to avoid I matching III) ──
+SEM_MAP = [
+    ("viii semester", "8th"), ("vii semester", "7th"),
+    ("vi semester", "6th"),   ("iv semester", "4th"),
+    ("iii semester", "3rd"),  ("ii semester", "2nd"),
+    ("v semester", "5th"),    ("i semester", "1st"),
+    ("8th semester", "8th"),  ("7th semester", "7th"),
+    ("6th semester", "6th"),  ("5th semester", "5th"),
+    ("4th semester", "4th"),  ("3rd semester", "3rd"),
+    ("2nd semester", "2nd"),  ("1st semester", "1st"),
+    ("8 semester", "8th"),    ("7 semester", "7th"),
+    ("6 semester", "6th"),    ("5 semester", "5th"),
+    ("4 semester", "4th"),    ("3 semester", "3rd"),
+    ("2 semester", "2nd"),    ("1 semester", "1st"),
+]
+
+ROMAN_REVERSE = {
+    "1st": "i semester", "2nd": "ii semester", "3rd": "iii semester",
+    "4th": "iv semester", "5th": "v semester",  "6th": "vi semester",
+    "7th": "vii semester", "8th": "viii semester"
+}
+
+def detect_semester(query_lower: str):
+    for phrase, num in SEM_MAP:
+        if phrase in query_lower:
+            return num
+    return None
+
+
+# ─── Post-reranking Scheme Filter ─────────────────────────
 def filter_scheme_results(results: list, query: str) -> list:
-    """
-    For scheme/semester queries, filter and re-sort results to prioritize:
-    1. Correct year (2022/2021/2020)
-    2. Correct semester
-    3. Core subjects over elective lists
-    """
     query_lower = query.lower()
 
     # Detect year
@@ -171,69 +203,45 @@ def filter_scheme_results(results: list, query: str) -> list:
             year = y
             break
 
-    # Detect semester
-    sem_map = {
-        "i semester": "1st", "ii semester": "2nd", "iii semester": "3rd",
-        "iv semester": "4th", "v semester": "5th", "vi semester": "6th",
-        "vii semester": "7th", "viii semester": "8th",
-        "1st semester": "1st", "2nd semester": "2nd", "3rd semester": "3rd",
-        "4th semester": "4th", "5th semester": "5th", "6th semester": "6th",
-        "7th semester": "7th", "8th semester": "8th",
-        "1 semester": "1st", "2 semester": "2nd", "3 semester": "3rd",
-        "4 semester": "4th", "5 semester": "5th", "6 semester": "6th",
-        "7 semester": "7th", "8 semester": "8th",
-    }
-    roman_map = {
-        "1st": "v semester", "2nd": "ii semester", "3rd": "iii semester",
-        "4th": "iv semester", "5th": "v semester", "6th": "vi semester",
-        "7th": "vii semester", "8th": "viii semester"
-    }
-
-    matched_sem = None
-    for sem_phrase, sem_num in sem_map.items():
-        if sem_phrase in query_lower:
-            matched_sem = sem_num
-            break
+    matched_sem = detect_semester(query_lower)
 
     if not year and not matched_sem:
-        return results  # Not a scheme query, return as-is
+        return results
 
     def score_result(r):
         doc_name = r.get("doc_name", "").lower()
         content = r.get("content", "").lower()
         score = r.get("score", 0.0)
-
         bonus = 0.0
 
-        # ── Year match — hard filter ──────────────────────
+        # Year match
         if year:
             if year in doc_name:
-                bonus += 100.0  # massive boost for correct year
+                bonus += 100.0
             else:
-                bonus -= 50.0   # massive penalty for wrong year
+                bonus -= 50.0
 
-        # ── Semester match ────────────────────────────────
+        # Semester match
         if matched_sem:
             if f"semester: {matched_sem}" in content:
                 bonus += 50.0
-            # Also check roman numeral in content
-            roman_reverse = {
-                "1st": "i semester", "2nd": "ii semester", "3rd": "iii semester",
-                "4th": "iv semester", "5th": "v semester", "6th": "vi semester",
-                "7th": "vii semester", "8th": "viii semester"
-            }
-            roman = roman_reverse.get(matched_sem, "")
+            roman = ROMAN_REVERSE.get(matched_sem, "")
             if roman and roman in content:
                 bonus += 30.0
+            # Strongly boost chunks with "Core Subjects:" — these are our structured chunks
+            if "core subjects:" in content:
+                bonus += 80.0
 
-        # ── Penalize pure elective chunks ─────────────────
-        elective_only = re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content) and not re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
+        # Penalize pure elective chunks
+        elective_only = (
+            re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content) and
+            not re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
+        )
         if elective_only:
             bonus -= 30.0
 
         return score + bonus
 
-    # Re-sort by combined score
     filtered = sorted(results, key=score_result, reverse=True)
     print(f"[SchemeFilter] Re-sorted {len(filtered)} results for year={year}, sem={matched_sem}")
     for i, r in enumerate(filtered[:5]):
@@ -288,6 +296,7 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
 
         # ── Smart Query-Based Boosting ────────────────────
         query_lower = query.lower()
+        matched_sem = detect_semester(query_lower)
 
         for i, doc in enumerate(all_docs):
             doc_name = doc.get("doc_name", "").lower()
@@ -308,6 +317,20 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
                         combined_scores[i] *= 3.0
                     elif "2020" in query_lower and "2020" in doc_name:
                         combined_scores[i] *= 3.0
+
+                    # Boost structured semester chunks
+                    if matched_sem and f"semester: {matched_sem}" in content:
+                        combined_scores[i] *= 4.0
+                    if "core subjects:" in content:
+                        combined_scores[i] *= 2.0
+
+                    # Penalize pure elective chunks
+                    elective_only = (
+                        re.search(r'\b\d{2}[A-Z]{2,3}\d{3}\b', content) and
+                        not re.search(r'\b\d{2}[A-Z]{2,3}\d{2}\b', content)
+                    )
+                    if elective_only:
+                        combined_scores[i] *= 0.3
 
             elif any(kw in query_lower for kw in ["research", "publication", "paper", "journal", "project"]):
                 if "research" in doc_name:
@@ -371,7 +394,7 @@ def hybrid_search(query: str, top_k: int = 20) -> list:
 
 def retrieve_documents(query: str, top_k: int = 10) -> list:
     try:
-        # ── Check Cache with ORIGINAL query ───────────────
+        # ── Check Cache ────────────────────────────────────
         cache_key = get_cache_key(query)
         if cache_key in _query_cache:
             print(f"[Cache HIT] Query: {query[:50]}")
@@ -381,7 +404,7 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         expanded_query = expand_query(query)
         query_lower = expanded_query.lower()
 
-        # ── Step 2: HyDE — generate hypothetical answer ───
+        # ── Step 2: HyDE ──────────────────────────────────
         search_query = expanded_query
         if should_use_hyde(query):
             hypothetical = generate_hypothetical_answer(query)
@@ -405,7 +428,7 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         else:
             top_k = 10
 
-        # ── Step 4: Hybrid Search with HyDE query ─────────
+        # ── Step 4: Hybrid Search ─────────────────────────
         results = hybrid_search(search_query, top_k=top_k)
 
         if not results:
@@ -415,7 +438,7 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
         for i, r in enumerate(results[:5]):
             print(f"[{i+1}] doc: {r.get('doc_name')} | rerank_score: {r.get('score'):.3f} | preview: {r.get('content','')[:80]}")
 
-        # ── DEBUG: Print top chunk contents ───────────────
+        # ── DEBUG: Top chunk contents ──────────────────────
         print(f"\n=== TOP CHUNK CONTENT FOR DEBUG ===")
         for i, r in enumerate(results[:3]):
             print(f"\n[CHUNK {i+1}] doc: {r.get('doc_name')}")
@@ -434,14 +457,14 @@ def retrieve_documents(query: str, top_k: int = 10) -> list:
 
         final_docs = documents if documents else [Document("No relevant content found.")]
 
-        # ── Recall@K and MRR (self-eval) ──────────────────
+        # ── Recall@K and MRR ──────────────────────────────
         retrieved_names = [r.get("doc_name", "") for r in results]
         unique_names = list(set(retrieved_names))
         recall = recall_at_k(retrieved_names, unique_names, k=top_k)
         mrr = mean_reciprocal_rank(retrieved_names, unique_names)
         print(f"[Eval] Recall@{top_k}: {recall} | MRR: {mrr}")
 
-        # ── Save to Cache with ORIGINAL query key ──────────
+        # ── Cache ──────────────────────────────────────────
         _query_cache[cache_key] = final_docs
         print(f"[Cache SET] Query cached: {query[:50]}")
 
