@@ -1,6 +1,11 @@
 """
 Text chunking for RAG pipeline.
 Table-aware chunking with syllabus/scheme detection.
+
+Supports all scheme course code formats:
+  2022: 22MAT31A, 22AI32, 22AIL35, 22AI36X, 22SCR37, 22AIL38X
+  2021: 21MAT31, 21AI32, 21AI35, 21SCR36, 21KSK37, 21AI38X, 21MATDIP31
+  2020: 20AI3DCDMS, 20AI3DCDSA, 20AI3DCPYP, 20AI3DLDSL
 """
 
 import re
@@ -22,13 +27,18 @@ ROMAN_TO_NUM = {
     "V": "5th", "VI": "6th", "VII": "7th", "VIII": "8th"
 }
 
-NUM_TO_ROMAN = {v: k for k, v in ROMAN_TO_NUM.items()}
-
 YEAR_MAP = {"18": "2018", "19": "2019", "20": "2020", "21": "2021", "22": "2022"}
 
-DEPT_CODES = r'\s+(?:AIML|AI&ML|AI\s+ML|MAT|MATS|MATH|HSS|ME|CV|BT|CS|EC|EE|AI|PHY|CHE|CIV)\s*$'
+DEPT_CODES = r'\s+(?:AIML|AI&ML|MAT|MATS|MATH|MATHS|HSS|ME|CV|BT|CS|EC|EE|PHY|CHE|CIV|HSMC)\s*$'
 
 COURSE_TYPES = r'(?:BSC|PCC|IPCC|PCCL|ESC|AEC|SEC|SCR|UHV|PROJ|INT|MC|HSMC|OEC|PEC|NCMC)'
+
+# Column headers that get mistakenly extracted as subject names
+SKIP_NAMES = {
+    "credits", "credit", "total", "marks", "hours", "l t p", "ltp",
+    "examination", "teaching", "course title", "course code", "sl no",
+    "theory", "tutorial", "practical", "duration"
+}
 
 
 def is_syllabus_document(text: str, doc_name: str) -> bool:
@@ -48,9 +58,23 @@ def is_aiml_block(block: str) -> bool:
         "ai&ml", "aiml", "artificial intelligence & machine learning",
         "artificial intelligence and machine learning",
         "20ai", "21ai", "22ai",
-        "ai4d", "ai5d", "ai6d", "ai7d", "ai8d",
-        "ai1d", "ai2d", "ai3d"
+        "ai3d", "ai4d", "ai5d", "ai6d", "ai7d", "ai8d",
+        "ai1d", "ai2d"
     ])
+
+
+def is_credit_distribution_block(block: str) -> bool:
+    """
+    Detect credit distribution summary tables.
+    These tables span all semesters and mix codes from multiple semesters.
+    """
+    block_lower = block.lower()
+    credits_count = block_lower.count("credits")
+    semester_count = sum(1 for sem in [
+        "i semester", "ii semester", "iii semester", "iv semester",
+        "v semester", "vi semester", "vii semester", "viii semester"
+    ] if sem in block_lower)
+    return credits_count > 8 or semester_count >= 3
 
 
 def clean_pdf_text(text: str) -> str:
@@ -73,9 +97,8 @@ def clean_pdf_text(text: str) -> str:
 
 def detect_year_from_text(text: str, doc_name: str) -> str:
     """Detect scheme year from doc name or content."""
-    doc_lower = doc_name.lower()
     for year in ["2022", "2021", "2020", "2018"]:
-        if year in doc_lower:
+        if year in doc_name.lower():
             return year
     match = re.search(r'\b(2018|2019|2020|2021|2022)\b', text[:500])
     if match:
@@ -87,37 +110,47 @@ def fix_wrapped_lines(block: str) -> str:
     """
     Fix subject names that wrap across lines in PDF extraction.
 
-    Pattern 1 (2020 scheme):
-        Foundation in Mathematics for
-        1 20AI4DCFMC Computing MAT
-        -> Foundation in Mathematics for 1 20AI4DCFMC Computing MAT
-
-    Pattern 2 (2022/2021 scheme):
-        Data Structures with Applications  TD: AIML
-        4 IPCC 22AI34                      PSB: AIML
+    2022/2021 — name above code row:
+        Data Structures with Applications
+        4 IPCC 22AI34   TD: AIML
         -> Data Structures with Applications 4 IPCC 22AI34
 
-    Pattern 3 (name before course type):
-        Python for Machine Learning Lab
-        5 PCCL 22AIL35
-        -> Python for Machine Learning Lab 5 PCCL 22AIL35
+    2020 — name above code row:
+        Foundation in Mathematics for
+        1 20AI4DCFMC Computing   MAT
+        -> Foundation in Mathematics for 1 20AI4DCFMC Computing MAT
+
+    2020 — name split across lines (no row number):
+        Discrete Mathematical
+        Structures
+        -> Discrete Mathematical Structures (handled by joining short lines)
     """
-    # Pattern 1: name ends with letter, next line starts with number + course code
+    # Pattern 1: name ends with letter, next line starts with row number + course code
     block = re.sub(r'([A-Za-z,])\n(\d+\s+\d{2}[A-Z])', r'\1 \2', block)
 
-    # Pattern 2: name ends with letter, next line starts with number + course type
-    block = re.sub(
-        r'([A-Za-z])\n(\d+\s+' + COURSE_TYPES + r'\b)',
-        r'\1 \2',
-        block
-    )
+    # Pattern 2: name ends with letter, next line starts with row number + course type
+    block = re.sub(r'([A-Za-z])\n(\d+\s+' + COURSE_TYPES + r'\b)', r'\1 \2', block)
 
-    # Pattern 3: standalone subject name line followed by course type + code
-    block = re.sub(
-        r'([A-Za-z])\n(' + COURSE_TYPES + r'\s+\d{2}[A-Z])',
-        r'\1 \2',
-        block
-    )
+    # Pattern 3: name ends with letter, next line is course type + code (no row number)
+    block = re.sub(r'([A-Za-z])\n(' + COURSE_TYPES + r'\s+\d{2}[A-Z])', r'\1 \2', block)
+
+    # Pattern 4: 2020 scheme — short continuation lines (e.g. "Discrete Mathematical\nStructures")
+    # Join lines where previous line ends with letter and next line starts with capital but is short
+    lines = block.split('\n')
+    joined = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # If this line is short (< 30 chars), starts with capital, and previous line ends with letter
+        if (i > 0 and len(line.strip()) < 30 and
+                line.strip() and line.strip()[0].isupper() and
+                joined and joined[-1].strip() and joined[-1].strip()[-1].isalpha() and
+                not re.search(r'\d{2}[A-Z]{2,}', line)):  # not a course code line
+            joined[-1] = joined[-1].rstrip() + ' ' + line.strip()
+        else:
+            joined.append(line)
+        i += 1
+    block = '\n'.join(joined)
 
     return block
 
@@ -146,21 +179,36 @@ def extract_semester_blocks(text: str) -> List[tuple]:
 
 def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: str) -> List[tuple]:
     """
-    Extract individual subject rows from a semester block.
-    Supports all scheme formats:
-      - 2022/2021: 22AI51, 22AIL54, 22AI55X, 22RM56, 22ES57
-      - 2020:      20AI4DCFMC, 20AI4DCDAA, 20HS4ICKAN
+    Extract subject rows from a semester block.
+
+    Course code patterns:
+      2022: 22MAT31A, 22AI32, 22AIL35, 22AI36X, 22SCR37, 22AIL38X
+      2021: 21MAT31, 21AI32, 21SCR36, 21KSK37, 21AI38X, 21MATDIP31
+      2020: 20AI3DCDMS, 20AI3DCDSA, 20AI3DCPYP, 20AI3DLDSL, 20AI4DCFMC
+
     Returns list of (code, name, is_elective_option).
     """
-    # Fix wrapped lines first
+    # Skip credit distribution summary tables
+    if is_credit_distribution_block(block):
+        return []
+
+    # Fix wrapped lines
     block = fix_wrapped_lines(block)
 
     subjects = []
 
+    # Universal course code pattern covering all three schemes:
+    # Group 1: course code
+    #   2022/2021 short format: \d{2}[A-Z]{2,4}L?\d{2}[AX]?
+    #     e.g. 22AI32, 22AIL35, 22MAT31A, 22AI36X, 21MATDIP31
+    #   2020 long format: \d{2}[A-Z]{2,3}\d[A-Z]{2}[A-Z]{2,4}
+    #     e.g. 20AI3DCDMS, 20AI3DLDSL, 20AI4DCFMC
     subject_pattern = re.compile(
-        r'\b(\d{2}[A-Z]{2,4}(?:L?\d{2}X?|\d[A-Z]{2,8}))\s+'
-        r'([A-Z][A-Za-z0-9\s\-\u2013&,/()]+?)'
-        r'(?=\s+(?:TD:|PSB:|PS:|MAT|AI&ML|AIML|HSS|ME\b|CV\b|BT\b|[0-9])\b|\s+\d\s+\d|\n|$)',
+        r'\b(\d{2}[A-Z]{2,4}(?:L?\d{2,4}[AX]?|L?\d[A-Z]{2}[A-Z]{2,4}))\b\s*'
+        r'([A-Z][A-Za-z0-9\s\-\u2013&,/()+]+?)'
+        r'(?=\s+(?:TD:|PSB:|PS:|AIML|AI&ML|MATHS|MAT\b|HSMC\b|ME\b|CV\b|BT\b|[0-9])\b'
+        r'|\s+\d\s+\d'
+        r'|\n|$)',
         re.MULTILINE
     )
 
@@ -169,17 +217,23 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
         code = match.group(1).strip()
         name = match.group(2).strip()
 
+        # Clean name
         name = re.sub(r'\s+', ' ', name).strip()
         name = re.sub(r'\s*[-\u2013]\s*$', '', name).strip()
         name = re.sub(DEPT_CODES, '', name, flags=re.IGNORECASE).strip()
         name = re.sub(r'\s+\d+(\s+\d+)*\s*$', '', name).strip()
-        name = re.sub(r'\s+(?:TD|PSB|PS|TD-Maths|PSB-Maths)\s*$', '', name, flags=re.IGNORECASE).strip()
+        name = re.sub(r'\s+(?:TD|PSB|PS|TD-Maths|PSB-Maths|Or)\s*$', '', name, flags=re.IGNORECASE).strip()
 
-        if len(name) < 3 or len(name) > 80:
+        # Skip generic column header names
+        if name.lower() in SKIP_NAMES:
+            continue
+
+        if len(name) < 3 or len(name) > 100:
             continue
         if code in seen_codes:
             continue
 
+        # Elective options: 3-digit numeric suffix e.g. 22AI551, 21AI381
         is_elective_option = bool(re.match(r'\d{2}[A-Z]{2,4}\d{3}$', code))
 
         seen_codes.add(code)
@@ -189,7 +243,7 @@ def extract_subjects_from_block(block: str, sem_num: str, year: str, doc_name: s
 
 
 def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
-    """Main syllabus chunking — creates one chunk per semester with all subjects."""
+    """Main syllabus chunking — creates one structured chunk per semester."""
     text = clean_pdf_text(text)
     chunks = []
     safe_doc = re.sub(r'[^a-zA-Z0-9]', '_', doc_name)
@@ -208,13 +262,12 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         })
         return chunks
 
-    # Track best chunk per semester (most subjects wins)
+    # Keep best block per semester (highest core subject count)
     best_per_semester = {}
 
     for roman, sem_num, block in semester_blocks:
         if not block.strip():
             continue
-
         if not is_aiml_block(block):
             continue
 
@@ -224,6 +277,7 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         if roman not in best_per_semester or core_count > best_per_semester[roman][0]:
             best_per_semester[roman] = (core_count, sem_num, subjects, block)
 
+    # Build structured chunks
     for roman, (core_count, sem_num, subjects, block) in best_per_semester.items():
         header = f"Scheme: {year} | Semester: {sem_num} | {roman} SEMESTER"
 
@@ -257,9 +311,9 @@ def extract_syllabus_chunks(text: str, doc_name: str) -> List[Dict[str, Any]]:
         })
         chunk_id += 1
 
-        logger.info(f"[Chunker] {doc_name} | {roman} SEMESTER | {len(core_subjects)} core + {len(elective_subjects)} elective subjects")
+        logger.info(f"[Chunker] {doc_name} | {roman} SEMESTER | {len(core_subjects)} core + {len(elective_subjects)} elective")
 
-    # Also chunk detailed syllabus content
+    # Also chunk detailed syllabus (modules, course outcomes etc.)
     subject_patterns = [
         r'(?=(?:PCC|IPCC|BSC|PCCL|PEC|AEC|SEC|HSMC|OEC|ESC|SCR)\s+\d{2}[A-Z]{2,3}\d{2,3})',
         r'(?=(?:Course Code|Subject Code)\s*[:\|])',
@@ -308,7 +362,7 @@ def extract_subject_header(text: str, year: str = "") -> str:
     header_lines = []
     scheme_info = ""
 
-    course_match = re.search(r'\b(\d{2})(AI|MA|HS|NS|PE|RM|ES)(\d)[A-Z0-9]{0,6}\b', text[:500])
+    course_match = re.search(r'\b(\d{2})(AI|MA|HS|NS|PE|RM|ES|SC)(\d)[A-Z0-9]{0,8}\b', text[:500])
     if course_match:
         detected_year = YEAR_MAP.get(course_match.group(1), course_match.group(1))
         sem_map = {
