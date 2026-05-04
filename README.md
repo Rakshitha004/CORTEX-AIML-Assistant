@@ -21,7 +21,7 @@
 
 | Name | USN |
 |------|-----|
-| Rakshitha | 1DS22AI041 |
+| Rakshitha PR | 1DS22AI041 |
 | Vrunda M | 1DS22AI060 |
 | Dhanyashree | 1DS22AI012 |
 | Sonu Kumar | 1DS22AI053 |
@@ -349,7 +349,7 @@ Ask any question → click ಕನ್ನಡ/हिंदी/తెలుగు �
 
 ## 📄 License
 
-Copyright (c) 2026 Rakshitha and Vrunda
+Copyright (c) 2026 Rakshitha PR and Vrunda
 
 Licensed under the MIT License — see [LICENSE](LICENSE) for details.
 
