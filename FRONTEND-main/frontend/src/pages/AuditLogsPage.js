@@ -20,19 +20,11 @@ const isSystemQuery = (query) => {
   return SYSTEM_PREFIXES.some(p => query.toLowerCase().startsWith(p.toLowerCase()));
 };
 
-const statusIcon = (s) => {
-  if (s === 'success' || s === true) return <CheckCircle className="w-4 h-4 text-green-400" />;
-  if (s === 'warning') return <AlertTriangle className="w-4 h-4 text-yellow-400" />;
-  return <AlertTriangle className="w-4 h-4 text-red-400" />;
-};
-
 export const AuditLogsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [chats, setChats] = useState([]);
-  const [metrics, setMetrics] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('queries');
 
   const loadData = async () => {
     setLoading(true);
@@ -40,19 +32,14 @@ export const AuditLogsPage = () => {
       const token = getToken();
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      const [chatsRes, metricsRes, summaryRes] = await Promise.all([
+      const [chatsRes, summaryRes] = await Promise.all([
         fetch(`${API_URL}/chat/history`, { headers }),
-        fetch(`${API_URL}/metrics/recent`, { headers }),
         fetch(`${API_URL}/metrics/summary`, { headers }),
       ]);
 
       if (chatsRes.ok) {
         const data = await chatsRes.json();
         setChats(data.history || []);
-      }
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
       }
       if (summaryRes.ok) {
         const data = await summaryRes.json();
@@ -74,12 +61,6 @@ export const AuditLogsPage = () => {
     .filter(c =>
       (c.query || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (c.email || '').toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-  const filteredMetrics = metrics
-    .filter(m => !isSystemQuery(m.query))
-    .filter(m =>
-      (m.query || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
   const formatTime = (timestamp) => {
@@ -107,7 +88,7 @@ export const AuditLogsPage = () => {
         </div>
         <p className="text-white/50 mb-8">Monitor real queries, metrics, and system activity</p>
 
-        {/* Real Metrics */}
+        {/* Stat Cards */}
         {summary && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {statCards.map((m, i) => (
@@ -124,30 +105,11 @@ export const AuditLogsPage = () => {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          {['queries', 'metrics'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab
-                  ? 'bg-white/10 text-white border border-white/20'
-                  : 'text-white/40 hover:text-white'
-              }`}
-            >
-              {tab === 'queries' ? '💬 Chat History' : '📊 Pipeline Metrics'}
-            </button>
-          ))}
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <GlassmorphicCard className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-medium text-white">
-                  {activeTab === 'queries' ? 'Chat Query Log' : 'Pipeline Metrics Log'}
-                </h2>
+                <h2 className="text-lg font-medium text-white">💬 Chat Query Log</h2>
                 <div className="relative w-56">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                   <input
@@ -164,7 +126,7 @@ export const AuditLogsPage = () => {
                   <Loader2 className="w-8 h-8 text-cyan-400 animate-spin mx-auto mb-3" />
                   <p className="text-white/30 text-sm">Loading logs...</p>
                 </div>
-              ) : activeTab === 'queries' ? (
+              ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -194,39 +156,6 @@ export const AuditLogsPage = () => {
                           <td className="py-3 pr-3 text-sm text-white max-w-xs truncate">{log.query}</td>
                           <td className="py-3 pr-3 text-sm text-white/50">{log.email?.split('@')[0] || '—'}</td>
                           <td className="py-3 text-sm text-white/40">{formatTime(log.timestamp)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-white/10">
-                        <th className="text-left text-xs text-white/40 uppercase tracking-wider pb-3 pr-3">Status</th>
-                        <th className="text-left text-xs text-white/40 uppercase tracking-wider pb-3 pr-3">Pipeline</th>
-                        <th className="text-left text-xs text-white/40 uppercase tracking-wider pb-3 pr-3">Query</th>
-                        <th className="text-left text-xs text-white/40 uppercase tracking-wider pb-3 pr-3">Score</th>
-                        <th className="text-left text-xs text-white/40 uppercase tracking-wider pb-3">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredMetrics.length === 0 ? (
-                        <tr><td colSpan={5} className="py-8 text-center text-white/30 text-sm">No metrics yet</td></tr>
-                      ) : filteredMetrics.map((m, i) => (
-                        <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                          <td className="py-3 pr-3">{statusIcon(m.success)}</td>
-                          <td className="py-3 pr-3">
-                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                              m.pipeline === 'RAG' ? 'bg-cyan-500/15 text-cyan-400' : 'bg-blue-500/15 text-blue-400'
-                            }`}>{m.pipeline}</span>
-                          </td>
-                          <td className="py-3 pr-3 text-sm text-white/70 max-w-xs truncate">{(m.query || '').slice(0, 40)}</td>
-                          <td className="py-3 pr-3 text-sm text-white/50">
-                            {m.grounding_score !== undefined ? m.grounding_score.toFixed(2) : m.rows_returned !== undefined ? `${m.rows_returned} rows` : '—'}
-                          </td>
-                          <td className="py-3 text-sm text-white/40">{m.execution_time_ms ? `${m.execution_time_ms}ms` : '—'}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -5,7 +5,7 @@ from backend.agents.query_generator_agent import generate_sql
 from backend.agents.sql_validator_agent import validate_sql
 from backend.agents.synthesis_agent import format_response
 from backend.agents.audit_feedback_agent import audit_pipeline
-from backend.agents.scholar_agent import fetch_scholar_publications  # ── NEW
+from backend.agents.scholar_agent import fetch_scholar_publications
 from backend.database.db_connection import run_sql
 from backend.rag.retriver import retrieve_documents
 from datetime import datetime
@@ -31,6 +31,7 @@ except Exception as e:
     print(f"[Nodes] MongoDB metrics connection failed: {e}")
 
 METRICS_CSV = "cortex_metrics.csv"
+
 
 def save_metrics(db, metrics: dict):
     target_db = metrics_col if metrics_col is not None else db
@@ -272,15 +273,15 @@ def synthesis_node(state):
         else:
             confidence = "Low"
 
-        # ── NEW: Append live Google Scholar results for research queries ──
+        # ── Scholar integration ────────────────────────────
         try:
             scholar_results = fetch_scholar_publications(query)
-            if scholar_results:
+            if scholar_results and "No live research results found" not in scholar_results:
                 answer = answer + scholar_results
                 print(f"[Scholar] Appended live publications to answer")
         except Exception as e:
             print(f"[Scholar] Failed gracefully: {e}")
-        # ── END Scholar integration ──
+        # ── END Scholar integration ────────────────────────
 
         rag_metrics = state.get("rag_metrics_partial", {})
         rag_metrics.update({
