@@ -82,7 +82,7 @@ Reply ONLY: student_query OR knowledge_query"""
                 "Content-Type": "application/json"
             },
             json={
-                "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                "model": "meta-llama/Meta-Llama-3-8B-Instruct-Lite",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0,
                 "max_tokens": 10
@@ -104,7 +104,6 @@ Reply ONLY: student_query OR knowledge_query"""
     except Exception as e:
         print(f"[Intent Error] {e}")
         q = query.lower()
-        # ✅ Check scheme/syllabus keywords first
         if any(w in q for w in [
             "scheme", "syllabus", "curriculum", "subject code",
             "credits", "elective", "lab subject", "passing criteria",
