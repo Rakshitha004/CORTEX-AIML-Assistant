@@ -72,6 +72,8 @@ CREATE TABLE subject_grades (
 - For students with backlogs/failures, use WHERE grade = 'F'
 - When asked about "average marks" or "average grade" for subjects, use the CASE grade mapping above
 - Always label the computed grade point column as avg_grade_point or grade_point for clarity
+- For semester comparison queries, use GROUP BY semester with WHERE semester IN (x, y)
+- The database only has 2021 batch students (USN pattern: 1DS21AI...)
 
 ### Examples
 - "who has highest cgpa?" → SELECT name, usn, cgpa FROM student_results ORDER BY cgpa DESC LIMIT 1;
@@ -83,6 +85,10 @@ CREATE TABLE subject_grades (
 - "show all grades of Vidya in 5th sem" → SELECT sr.name, sg.subject_name, sg.grade FROM student_results sr JOIN subject_grades sg ON sr.usn = sg.usn WHERE sr.name ILIKE '%Vidya%' AND sg.semester = 5;
 - "how many students have cgpa above 9?" → SELECT COUNT(*) FROM student_results WHERE cgpa > 9;
 - "average sgpa of 6th semester" → SELECT ROUND(AVG(sgpa)::numeric, 2) AS avg_sgpa FROM semester_results WHERE semester = 6;
+- "compare average sgpa of 3rd sem and 4th sem" → SELECT semester, ROUND(AVG(sgpa)::numeric, 2) AS avg_sgpa FROM semester_results WHERE semester IN (3, 4) GROUP BY semester ORDER BY semester;
+- "compare class average sgpa of all semesters" → SELECT semester, ROUND(AVG(sgpa)::numeric, 2) AS avg_sgpa FROM semester_results GROUP BY semester ORDER BY semester;
+- "which semester has highest average sgpa?" → SELECT semester, ROUND(AVG(sgpa)::numeric, 2) AS avg_sgpa FROM semester_results GROUP BY semester ORDER BY avg_sgpa DESC LIMIT 1;
+- "class average cgpa of 2021 batch" → SELECT ROUND(AVG(cgpa)::numeric, 2) AS average_cgpa FROM student_results WHERE usn LIKE '%21AI%';
 - "students whose sgpa dropped" → SELECT sr.name, sr.usn, s1.semester AS from_sem, s2.semester AS to_sem, s1.sgpa AS sgpa_before, s2.sgpa AS sgpa_after FROM semester_results s1 JOIN semester_results s2 ON s1.usn = s2.usn AND s2.semester = s1.semester + 1 JOIN student_results sr ON s1.usn = sr.usn WHERE s2.sgpa < s1.sgpa ORDER BY (s1.sgpa - s2.sgpa) DESC;
 - "which 5 subjects have highest average marks?" → SELECT subject_name, ROUND(AVG(CASE grade WHEN 'O' THEN 10 WHEN 'S' THEN 9 WHEN 'A' THEN 8 WHEN 'B' THEN 7 WHEN 'C' THEN 6 WHEN 'D' THEN 5 WHEN 'F' THEN 0 ELSE 0 END)::numeric, 2) AS avg_grade_point FROM subject_grades GROUP BY subject_name ORDER BY avg_grade_point DESC LIMIT 5;
 - "which subject has most failures?" → SELECT subject_name, COUNT(*) AS failures FROM subject_grades WHERE grade = 'F' GROUP BY subject_name ORDER BY failures DESC LIMIT 1;
