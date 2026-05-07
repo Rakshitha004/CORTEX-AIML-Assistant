@@ -82,7 +82,7 @@ Reply ONLY: student_query OR knowledge_query"""
                 "Content-Type": "application/json"
             },
             json={
-                "model": "meta-llama/Meta-Llama-3-8B-Instruct-Lite",
+                "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0,
                 "max_tokens": 10

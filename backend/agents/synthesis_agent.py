@@ -188,6 +188,7 @@ Answer strictly based ONLY on the provided context. Follow these rules:
 7. For comparison queries -> use tables to compare clearly.
 8. For lists -> include EVERY item, do not truncate.
 9. For semester/scheme queries -> COPY the subject code and subject name EXACTLY as they appear in the context. Do NOT paraphrase, rename or reorder subject names. If context says '22AI51 Data Science', output exactly '22AI51 Data Science'. Never substitute a different subject name for a given course code.
+10. For faculty queries -> ONLY include people with academic designations such as Professor, Associate Professor, Assistant Professor, Head, Coordinator, Lecturer. Do NOT include students, editors, or non-faculty roles like Editor-in-Chief, Student Coordinator, or any person with a USN.
 
 Context:
 {context_str}
