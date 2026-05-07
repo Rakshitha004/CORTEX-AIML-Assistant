@@ -8,9 +8,9 @@ import numpy as np
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
 # ── Models ──────────────────────────────────────────────────────────────────
-FAST_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo"   # Simple queries — 3-4 sec
-SQL_MODEL  = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"    # SQL formatting
-RAG_MODEL  = "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"    # Complex RAG queries
+FAST_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo"            # Simple queries
+SQL_MODEL  = "Qwen/Qwen3-235B-A22B-Instruct-2507-tput"            # SQL formatting
+RAG_MODEL  = "Qwen/Qwen3-235B-A22B-Instruct-2507-tput"            # Complex RAG queries
 
 # ── Query complexity detector ────────────────────────────────────────────────
 COMPLEX_KEYWORDS = [
