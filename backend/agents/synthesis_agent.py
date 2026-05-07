@@ -70,6 +70,12 @@ def compute_grounding_score(query: str, answer: str, context: str) -> float:
         return 0.0
 
 
+def clean_br_tags(text: str) -> str:
+    """Remove any <br> or <br/> tags from response and replace with newline"""
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    return text
+
+
 def fallback_sql_format(query: str, result: list) -> str:
     """Clean fallback formatter"""
     if not result:
@@ -118,6 +124,7 @@ Rules:
 8. Never show raw dict format like {{'name': 'xyz'}}
 9. For grades: O=Outstanding, A+=Excellent, A=Very Good, B+=Good, B=Above Average, C=Average, P=Pass, F=Fail
 10. If comparison query -> highlight differences clearly
+11. NEVER use <br> tags anywhere in your response
 
 Database Results:
 {result_str}
@@ -153,6 +160,7 @@ Answer:"""
                     raise Exception(f"No choices after 3 attempts: {data}")
 
             answer = data["choices"][0]["message"]["content"]
+            answer = clean_br_tags(answer)
             grounding = round(min(1.0, len(result) / 10), 2) if result else 0.0
             return answer, grounding
 
@@ -185,10 +193,11 @@ Answer strictly based ONLY on the provided context. Follow these rules:
 4. UNKNOWN: If context does not contain the answer say exactly: 'I do not have enough information about that.'
 5. Never use placeholders like [Name]. Only real names from context.
 6. Keep response focused and clear.
-7. For comparison queries -> use tables to compare clearly.
+7. For comparison queries -> use tables to compare clearly. Never use <br> inside table cells — list subjects as comma separated or use separate rows.
 8. For lists -> include EVERY item, do not truncate.
 9. For semester/scheme queries -> COPY the subject code and subject name EXACTLY as they appear in the context. Do NOT paraphrase, rename or reorder subject names. If context says '22AI51 Data Science', output exactly '22AI51 Data Science'. Never substitute a different subject name for a given course code.
 10. For faculty queries -> ONLY include people with academic designations such as Professor, Associate Professor, Assistant Professor, Head, Coordinator, Lecturer. Do NOT include students, editors, or non-faculty roles like Editor-in-Chief, Student Coordinator, or any person with a USN.
+11. NEVER use <br> or <br/> tags anywhere in your response. Use bullet points or newlines instead.
 
 Context:
 {context_str}
@@ -224,6 +233,7 @@ Answer:"""
                     raise Exception(f"No choices after 3 attempts: {data}")
 
             answer = data["choices"][0]["message"]["content"]
+            answer = clean_br_tags(answer)
             grounding_score = compute_grounding_score(query, answer, context_str)
             return answer, grounding_score
 
