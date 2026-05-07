@@ -193,20 +193,24 @@ Answer strictly based ONLY on the provided context. Follow these rules:
 4. UNKNOWN: If context does not contain the answer say exactly: 'I do not have enough information about that.'
 5. Never use placeholders like [Name]. Only real names from context.
 6. Keep response focused and clear.
-7. For comparison queries (compare, difference, vs, versus) -> Format the response as two separate clearly labeled sections like this:
-   ## 2021 Scheme
-   **3rd Semester:**
-   - 21MAT31 Foundation in Mathematics
-   - 21AI32 Data Structures
+7. For comparison queries (compare, difference, vs, versus, changed, what changed):
+   STEP 1 — Write a clean KEY DIFFERENCES summary table first:
+   | Feature | 2021 Scheme | 2022 Scheme |
+   |---------|------------|------------|
+   | Semesters covered | III to VIII | III to VIII |
+   | Unique subjects | Generative AI, NLP Lab, OOPs with Java | Data Science, Deep Learning, Biology for Engineers |
+   | Kannada courses | Yes (3rd and 4th sem) | No |
+   | Internship | Innovation Internship in 6th sem | Research/Industry Internship in 8th sem |
+   Keep table cells SHORT — max 1-2 items per cell. NEVER put long lists in table cells.
+   STEP 2 — Then list subjects semester wise for each scheme separately as bullet points:
+   **2021 Scheme — Subject List:**
+   3rd Semester: bullet list
+   4th Semester: bullet list
    ...
-   ## 2022 Scheme
-   **3rd Semester:**
-   - 22MAT31A Mathematics for Computer Science
-   - 22AI32 Introduction to Artificial Intelligence
+   **2022 Scheme — Subject List:**
+   3rd Semester: bullet list
+   4th Semester: bullet list
    ...
-   ## Key Differences
-   - Bullet point differences here
-   NEVER use a single table with multiple subjects per cell. NEVER use <br> inside cells.
 8. For lists -> include EVERY item, do not truncate.
 9. For semester/scheme queries -> COPY the subject code and subject name EXACTLY as they appear in the context. Do NOT paraphrase, rename or reorder subject names. If context says '22AI51 Data Science', output exactly '22AI51 Data Science'. Never substitute a different subject name for a given course code.
 10. For faculty queries -> ONLY include people with academic designations such as Professor, Associate Professor, Assistant Professor, Head, Coordinator, Lecturer. Do NOT include students, editors, or non-faculty roles like Editor-in-Chief, Student Coordinator, or any person with a USN.
