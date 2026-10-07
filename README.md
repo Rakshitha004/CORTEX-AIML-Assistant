@@ -341,7 +341,6 @@ Ask any question → click ಕನ್ನಡ/हिंदी/తెలుగు �
 - [ ] Streaming responses
 - [ ] RAGAs evaluation pipeline
 - [ ] Data visualization for SQL results
-- [ ] Google Scholar live integration
 - [ ] Batch/year-wise comparison queries
 - [ ] Full accessibility (WCAG 2.1)
 
